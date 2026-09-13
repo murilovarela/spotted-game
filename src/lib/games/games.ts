@@ -2,7 +2,7 @@
  * Authoring core. Every function takes the database and the acting user explicitly so
  * integration tests run the real logic; `actions.ts` wraps these for the UI.
  */
-import { and, asc, count, eq, gt, sql } from "drizzle-orm";
+import { and, asc, count, eq, gt, isNull, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type { Database } from "@/db";
 import { games, objects, type Game, type User } from "@/db/schema";
@@ -57,33 +57,39 @@ export async function updateGame(
   gameId: string,
   input: { title?: string; generalPrompt?: string; backgroundKey?: string },
 ): Promise<ActionResult<null>> {
-  const owned = await loadOwnedGame(db, user, gameId);
-  if (!owned.ok) return owned;
-  const draft = requireDraft(owned.data);
-  if (!draft.ok) return draft;
-  const set: Partial<typeof games.$inferInsert> = { updatedAt: new Date() };
-  if (input.title !== undefined) {
-    const t = validateTitle(input.title);
-    if (!t.ok) return t;
-    set.title = t.data;
-  }
-  if (input.generalPrompt !== undefined) {
-    const p = validatePrompt(input.generalPrompt);
-    if (!p.ok) return p;
-    set.generalPrompt = p.data;
-  }
-  if (input.backgroundKey !== undefined) set.backgroundKey = input.backgroundKey;
-  await db.update(games).set(set).where(eq(games.id, gameId));
-  return ok(null);
+  // Locked so a concurrent publishGame can't commit between this read and this write
+  // (invariant 4's window — see games.integration.test.ts's lock-ordering test).
+  return db.transaction(async (tx) => {
+    const owned = await loadOwnedGame(tx, user, gameId, true);
+    if (!owned.ok) return owned;
+    const draft = requireDraft(owned.data);
+    if (!draft.ok) return draft;
+    const set: Partial<typeof games.$inferInsert> = { updatedAt: new Date() };
+    if (input.title !== undefined) {
+      const t = validateTitle(input.title);
+      if (!t.ok) return t;
+      set.title = t.data;
+    }
+    if (input.generalPrompt !== undefined) {
+      const p = validatePrompt(input.generalPrompt);
+      if (!p.ok) return p;
+      set.generalPrompt = p.data;
+    }
+    if (input.backgroundKey !== undefined) set.backgroundKey = input.backgroundKey;
+    await tx.update(games).set(set).where(eq(games.id, gameId));
+    return ok(null);
+  });
 }
 
 export async function deleteGame(db: Database, user: User, gameId: string): Promise<ActionResult<null>> {
-  const owned = await loadOwnedGame(db, user, gameId);
-  if (!owned.ok) return owned;
-  const draft = requireDraft(owned.data);
-  if (!draft.ok) return draft;
-  await db.delete(games).where(eq(games.id, gameId)); // objects cascade
-  return ok(null);
+  return db.transaction(async (tx) => {
+    const owned = await loadOwnedGame(tx, user, gameId, true);
+    if (!owned.ok) return owned;
+    const draft = requireDraft(owned.data);
+    if (!draft.ok) return draft;
+    await tx.delete(games).where(eq(games.id, gameId)); // objects cascade
+    return ok(null);
+  });
 }
 
 export async function addObject(
@@ -122,18 +128,36 @@ async function loadOwnedObject(
   db: Db,
   user: User,
   objectId: string,
+  forUpdate = false,
 ): Promise<ActionResult<{ object: typeof objects.$inferSelect; game: Game }>> {
   if (!isUuid(objectId)) return fail("NOT_FOUND", "Object not found");
-  const [row] = await db
-    .select({ object: objects, game: games })
-    .from(objects)
-    .innerJoin(games, eq(games.id, objects.gameId))
-    .where(eq(objects.id, objectId));
-  if (!row) return fail("NOT_FOUND", "Object not found");
-  if (row.game.masterId !== user.id) return fail("NOT_MASTER", "Only the game master can do that");
-  const draft = requireDraft(row.game);
+
+  if (!forUpdate) {
+    const [row] = await db
+      .select({ object: objects, game: games })
+      .from(objects)
+      .innerJoin(games, eq(games.id, objects.gameId))
+      .where(eq(objects.id, objectId));
+    if (!row) return fail("NOT_FOUND", "Object not found");
+    if (row.game.masterId !== user.id) return fail("NOT_MASTER", "Only the game master can do that");
+    const draft = requireDraft(row.game);
+    if (!draft.ok) return draft;
+    return ok(row);
+  }
+
+  // Locked path (invariant 4): find which game the object belongs to, lock that game row
+  // first — the same row publishGame locks — then re-read the object fresh so sortOrder,
+  // x/y/radius and confirmed reflect anything committed while this call waited on the lock.
+  const [pointer] = await db.select({ gameId: objects.gameId }).from(objects).where(eq(objects.id, objectId));
+  if (!pointer) return fail("NOT_FOUND", "Object not found");
+  const [game] = await db.select().from(games).where(eq(games.id, pointer.gameId)).for("update");
+  if (!game) return fail("NOT_FOUND", "Object not found");
+  if (game.masterId !== user.id) return fail("NOT_MASTER", "Only the game master can do that");
+  const draft = requireDraft(game);
   if (!draft.ok) return draft;
-  return ok(row);
+  const [object] = await db.select().from(objects).where(eq(objects.id, objectId));
+  if (!object) return fail("NOT_FOUND", "Object not found");
+  return ok({ object, game });
 }
 
 export async function updateObject(
@@ -150,43 +174,47 @@ export async function updateObject(
     radius?: Normalized;
   },
 ): Promise<ActionResult<null>> {
-  const owned = await loadOwnedObject(db, user, objectId);
-  if (!owned.ok) return owned;
-  const set: Partial<typeof objects.$inferInsert> = {};
-  if (input.label !== undefined) {
-    const l = validateLabel(input.label);
-    if (!l.ok) return l;
-    set.label = l.data;
-  }
-  if (input.prompt !== undefined) {
-    const p = validatePrompt(input.prompt);
-    if (!p.ok) return p;
-    set.prompt = p.data;
-  }
-  if (input.sourceImageKey !== undefined) set.sourceImageKey = input.sourceImageKey;
-  if (input.requestedScale !== undefined) set.requestedScale = input.requestedScale;
-  const positional = [input.x, input.y, input.radius];
-  if (positional.some((v) => v !== undefined)) {
-    if (positional.some((v) => v === undefined)) return fail("INVALID_INPUT", "x, y and radius must be set together");
-    // Handoff rule: a new position invalidates any previous confirmation.
-    Object.assign(set, { x: input.x, y: input.y, radius: input.radius, confirmed: false });
-  }
-  if (Object.keys(set).length === 0) return ok(null);
-  await db.update(objects).set(set).where(eq(objects.id, objectId));
-  return ok(null);
+  return db.transaction(async (tx) => {
+    const owned = await loadOwnedObject(tx, user, objectId, true);
+    if (!owned.ok) return owned;
+    const set: Partial<typeof objects.$inferInsert> = {};
+    if (input.label !== undefined) {
+      const l = validateLabel(input.label);
+      if (!l.ok) return l;
+      set.label = l.data;
+    }
+    if (input.prompt !== undefined) {
+      const p = validatePrompt(input.prompt);
+      if (!p.ok) return p;
+      set.prompt = p.data;
+    }
+    if (input.sourceImageKey !== undefined) set.sourceImageKey = input.sourceImageKey;
+    if (input.requestedScale !== undefined) set.requestedScale = input.requestedScale;
+    const positional = [input.x, input.y, input.radius];
+    if (positional.some((v) => v !== undefined)) {
+      if (positional.some((v) => v === undefined)) return fail("INVALID_INPUT", "x, y and radius must be set together");
+      // Handoff rule: a new position invalidates any previous confirmation.
+      Object.assign(set, { x: input.x, y: input.y, radius: input.radius, confirmed: false });
+    }
+    if (Object.keys(set).length === 0) return ok(null);
+    await tx.update(objects).set(set).where(eq(objects.id, objectId));
+    return ok(null);
+  });
 }
 
 export async function confirmObject(db: Database, user: User, objectId: string): Promise<ActionResult<null>> {
-  const owned = await loadOwnedObject(db, user, objectId);
-  if (!owned.ok) return owned;
-  if (owned.data.object.x === null) return fail("INVALID_INPUT", "The object has no position to confirm");
-  await db.update(objects).set({ confirmed: true }).where(eq(objects.id, objectId));
-  return ok(null);
+  return db.transaction(async (tx) => {
+    const owned = await loadOwnedObject(tx, user, objectId, true);
+    if (!owned.ok) return owned;
+    if (owned.data.object.x === null) return fail("INVALID_INPUT", "The object has no position to confirm");
+    await tx.update(objects).set({ confirmed: true }).where(eq(objects.id, objectId));
+    return ok(null);
+  });
 }
 
 export async function removeObject(db: Database, user: User, objectId: string): Promise<ActionResult<null>> {
   return db.transaction(async (tx) => {
-    const owned = await loadOwnedObject(tx, user, objectId);
+    const owned = await loadOwnedObject(tx, user, objectId, true);
     if (!owned.ok) return owned;
     const { object } = owned.data;
     await tx.delete(objects).where(eq(objects.id, objectId));
@@ -205,14 +233,16 @@ export async function setWindow(
   input: { startsAt: Date; endsAt: Date },
   now: Date,
 ): Promise<ActionResult<null>> {
-  const owned = await loadOwnedGame(db, user, gameId);
-  if (!owned.ok) return owned;
-  const draft = requireDraft(owned.data);
-  if (!draft.ok) return draft;
-  const w = validateWindow(input.startsAt, input.endsAt, now);
-  if (!w.ok) return w;
-  await db.update(games).set({ startsAt: w.data.startsAt, endsAt: w.data.endsAt, updatedAt: now }).where(eq(games.id, gameId));
-  return ok(null);
+  return db.transaction(async (tx) => {
+    const owned = await loadOwnedGame(tx, user, gameId, true);
+    if (!owned.ok) return owned;
+    const draft = requireDraft(owned.data);
+    if (!draft.ok) return draft;
+    const w = validateWindow(input.startsAt, input.endsAt, now);
+    if (!w.ok) return w;
+    await tx.update(games).set({ startsAt: w.data.startsAt, endsAt: w.data.endsAt, updatedAt: now }).where(eq(games.id, gameId));
+    return ok(null);
+  });
 }
 
 /** Invariant 4: the check and the write happen in one transaction with the game row locked. */
@@ -232,8 +262,16 @@ export async function publishGame(
     // publishPreconditions guarantees both are non-null.
     const w = validateWindow(game.startsAt as Date, game.endsAt as Date, now);
     if (!w.ok) return w;
-    await tx.update(games).set({ publishedAt: now, updatedAt: now }).where(eq(games.id, gameId));
-    return ok({ publishedAt: now });
+    // Belt-and-braces on the one write that carries invariant 4: only succeed if the row
+    // was still a draft at write time, and prove it via the returned row rather than
+    // trusting the read above.
+    const [row] = await tx
+      .update(games)
+      .set({ publishedAt: now, updatedAt: now })
+      .where(and(eq(games.id, gameId), isNull(games.publishedAt)))
+      .returning({ publishedAt: games.publishedAt });
+    if (!row || row.publishedAt === null) return fail("NOT_DRAFT", "Game is already published");
+    return ok({ publishedAt: row.publishedAt });
   });
 }
 

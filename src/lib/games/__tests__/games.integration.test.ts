@@ -146,6 +146,53 @@ describe("publishGame", () => {
   });
 });
 
+describe("concurrency (invariant 4)", () => {
+  it("a game-row lock held by one transaction blocks a concurrent draft mutation, which then sees the committed publish", async () => {
+    const { gameId, objectId } = await draftWithConfirmedObject();
+
+    // A second connection, separate from `db`, so we can hold a transaction open on it
+    // while issuing queries against `db` from the test body.
+    const { db: db2, close: close2 } = createTestDb();
+    try {
+      let releaseGate!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        releaseGate = resolve;
+      });
+      let signalLocked!: () => void;
+      const locked = new Promise<void>((resolve) => {
+        signalLocked = resolve;
+      });
+
+      const holder = db2.transaction(async (tx) => {
+        await tx.select().from(games).where(eq(games.id, gameId)).for("update");
+        signalLocked();
+        await gate; // hold the lock open until the test releases it
+        // Still holding the lock: commit the publish before releasing it, so the waiter
+        // below can only proceed once this is already true.
+        await tx.update(games).set({ publishedAt: now, updatedAt: now }).where(eq(games.id, gameId));
+      });
+
+      await locked; // the holder has the FOR UPDATE lock on the games row
+
+      const pending = updateObject(db, master, objectId, { label: "x" });
+      let settled = false;
+      void pending.then(() => {
+        settled = true;
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(settled).toBe(false); // still blocked behind the game-row lock
+
+      releaseGate();
+      await holder; // commits publishedAt, releasing the lock
+
+      expect(await pending).toMatchObject({ ok: false, error: "NOT_DRAFT" });
+    } finally {
+      await close2();
+    }
+  });
+});
+
 describe("after publish", () => {
   it("draft-only mutations are refused; unpublish works only while scheduled", async () => {
     const { gameId, objectId } = await draftWithConfirmedObject();
