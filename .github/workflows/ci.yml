@@ -209,6 +209,8 @@ jobs:
   integration:
     name: Integration (Neon)
     runs-on: ubuntu-latest
+    outputs:
+      status: ${{ steps.run.outputs.status || steps.skip.outputs.status }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -227,13 +229,21 @@ jobs:
           DATABASE_URL_UNPOOLED: ${{ secrets.TEST_DATABASE_URL_UNPOOLED }}
         run: npx drizzle-kit migrate
       - name: Run integration tests
+        id: run
         if: steps.db.outputs.present == 'true'
+        shell: bash
         env:
           TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
-        run: npm run test:integration
+        run: |
+          npm run test:integration
+          echo "status=pass" >> "$GITHUB_OUTPUT"
       - name: No secret configured
+        id: skip
         if: steps.db.outputs.present == 'false'
-        run: echo "::warning::TEST_DATABASE_URL secret not set; integration tests skipped"
+        shell: bash
+        run: |
+          echo "::warning::TEST_DATABASE_URL secret not set; integration tests skipped"
+          echo "status=skipped" >> "$GITHUB_OUTPUT"
 
   report:
     name: Quality Report
@@ -264,7 +274,7 @@ jobs:
           SECURITY_ERRORS: ${{ needs.security.outputs.errors }}
           UNUSED_STATUS: ${{ needs.unused.outputs.status }}
           UNUSED_COUNT: ${{ needs.unused.outputs.count }}
-          INTEGRATION_RESULT: ${{ needs.integration.result }}
+          INTEGRATION_STATUS: ${{ needs.integration.outputs.status }}
         with:
           script: |
             const fs = require('fs');
@@ -299,7 +309,7 @@ jobs:
               { name: 'duplication', status: process.env.DUPLICATION_STATUS, prev: baseline.duplication,    curr: process.env.DUPLICATION_PCT,   unit: '%',          lower: true  },
               { name: 'security',    status: process.env.SECURITY_STATUS,    prev: baseline.securityErrors, curr: process.env.SECURITY_ERRORS,   unit: 'errors',     lower: true  },
               { name: 'unused',      status: process.env.UNUSED_STATUS,      prev: baseline.unusedExports,  curr: process.env.UNUSED_COUNT,      unit: 'issues',     lower: true  },
-              { name: 'integration', status: process.env.INTEGRATION_RESULT === 'success' ? 'pass' : process.env.INTEGRATION_RESULT === 'skipped' ? 'skipped' : 'fail', prev: null, curr: null, unit: null },
+              { name: 'integration', status: process.env.INTEGRATION_STATUS === 'pass' ? 'pass' : process.env.INTEGRATION_STATUS === 'skipped' ? 'skipped' : 'fail', prev: null, curr: null, unit: null },
             ];
 
             const rows = checks.map(c =>
@@ -353,7 +363,7 @@ jobs:
       needs.duplication.result == 'success' &&
       needs.security.result == 'success' &&
       needs.unused.result == 'success' &&
-      needs.integration.result == 'success'
+      needs.integration.outputs.status == 'pass'
     permissions:
       contents: write
     steps:
