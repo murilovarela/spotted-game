@@ -330,59 +330,131 @@ seed fixtures, the Playwright skeleton and its CI job, and the deterministic pas
 
 ---
 
-## Phase 1 — Platform stream: consolidated review fixes
+## Phase 1 — Platform stream
 
-The platform stream (`src/lib/games`, `src/db`, the master pages) had already gone
-through ten individually-reviewed tasks on `stream/platform`. Before merging that branch,
-one more pass ran the whole diff against the review checklist at once, rather than
-task-by-task, on the theory that some findings only show up once every file is read
-together — duplication across functions, for one, is invisible inside a single task's
-diff.
+*Claude Code session, 13 September 2026, branch `stream/platform`.*
 
-That pass found five things `npx jscpd src/` calls exact duplication: `games.ts` had the
-same "load the game, lock it, require it's a draft" sequence written out four times
-(`updateGame`, `deleteGame`, `addObject`, `setWindow`), `play.ts` had "load the game by
-its public id, then require it's playable" written out twice (`startAttempt`,
-`submitAttempt`), and `actions.ts` had hand-copied input object types that had already
-drifted slightly from the core functions they wrapped. The fix in each case was the same
-shape: extract the repeated sequence into one named function (`loadOwnedDraft`,
-`loadPlayable`) and derive the wrapper types from `Parameters<typeof core.fn>[n]` instead
-of retyping them by hand. `npx jscpd src/` went from 5 clones (2.01%) to 0.
+### What we set out to do
 
-The same pass added a check that had never been exercised: nothing stopped a game master
-from handing `updateGame` or `addObject` a storage key that belonged to a *different*
-game — the functions trusted whatever key string arrived. `isOwnedKey(kind, gameId, key)`
-in `src/lib/storage.ts` closes that: a key must start with `games/<gameId>/<kind>/` and
-carry no `..` segment. The existing integration tests had been using placeholder keys
-like `"games/x/background/a.png"` and `"k0"` that never belonged to any real game, which
-would now fail the new check — they were rewritten to build keys from the game id the
-test actually created.
+Phase 1 is Stream A of SPEC §7: sign-in, game authoring, publishing, and the play-side
+server logic — everything a game needs except image generation and the drawing surface.
+It was the first phase built on the frozen Phase 0 contract, and the first run of a
+different way of working: instead of one session writing every file, the session wrote a
+plan of ten tasks and then dispatched a fresh subagent per task, followed by a fresh
+reviewer per task, followed by one whole-branch review at the end. The orchestrating
+session touched no code. Its job was to write briefs, read reports, and rule on conflicts.
 
-The other addition worth naming is `setGeneratedImage`, the function the imagegen stream
-calls when a generation run finishes. It takes no `User` — there is no human in that call
-path — locks the game row the same way `publishGame` does, and resets every object's
-`confirmed` flag on a new image, not just the ones the run proposed a position for. That
-last part matters: a stale confirmed position from a previous image is a silent
-correctness bug (invariant 4 exists precisely to keep an unreviewed position out of a
-published game), so the reset has to be unconditional and the proposal application
-additive on top of it.
+### What we decided and why
 
-Everything else in the pass was smaller: `unpublishGame`'s write became a conditional
-`UPDATE ... WHERE published_at IS NOT NULL AND starts_at > now()` instead of a check-then-write,
-the leaderboard's name fallback changed from the email's local part to a fixed `"Player"`
-string (an email fragment on a public leaderboard was a small information leak nobody had
-flagged until this pass), and the authoring server actions gained runtime validation —
-`isNormalized` and a new `isValidScale` — for the coordinate and scale fields that cross
-the client/server boundary as plain numbers, since a branded TypeScript type is a
-compile-time fiction once JSON has carried it over the wire.
+Four decisions the spec left open were put to the human before planning, each with a
+recommendation; all four recommendations were taken.
+
+**How users reach the database.** Clerk is the identity provider; the `users` table is a
+mirror. Options were a Clerk webhook (canonical, but needs a public URL and a signing
+secret even in development) or a lazy upsert the first time a signed-in user calls any
+server action. Lazy upsert won: no webhook, works identically on a laptop and on Vercel,
+and the row refreshes name and avatar on every call for free.
+
+**How images reach storage.** Browser straight to the bucket via a presigned PUT, or
+through a server action. Vercel caps request bodies at 4.5 MB, which is fine for object
+cut-outs and not fine for backgrounds, so presigned PUT — after first proving that the
+bucket honours CORS and that a presigned PUT actually lands, since neither was
+documented for Neon's storage.
+
+**Where the play actions live.** Start, submit, and leaderboard could have waited for the
+canvas stream in Phase 3. They carry three invariants — scoring server-side only,
+server-anchored time, one submission per player — and they write to tables the platform
+stream owns, so they were built now, with integration tests, and Phase 3 will build UI
+against a tested contract rather than write into another stream's directory.
+
+**Where integration tests get a database.** A dedicated Neon branch, its connection string
+held as a GitHub secret. Tests truncate every table before each run, so the harness
+refuses to start unless a separate `TEST_DATABASE_URL` is set — it will never point at
+the development branch by accident.
+
+One more decision was made during setup rather than before it. The `.env.local` file
+already contained a `TEST_DATABASE_URL`, and it pointed at the same endpoint as the
+development database. Had the first integration test run, it would have truncated the
+dev branch. A `test` branch was created and the human was asked to repoint the variable
+before any test was dispatched — the one moment in the phase where the orchestrator
+stopped and waited.
+
+### What broke
+
+**The test config could not read its own environment.** The plan said to load
+`.env.local` with the same helper Next uses. The helper skips `.env.local` whenever
+`NODE_ENV` is `test`, and Vitest sets exactly that. The first implementer found it, read
+the library's source to confirm it, and worked around it with a comment explaining why.
+
+**A commit signed by the wrong model.** A Haiku subagent wrote a perfectly good task and
+signed the commit as itself. Every later brief states the required footer verbatim.
+
+**Invariant 4 was not race-safe.** The publish transaction locked the game row before
+checking that every object was confirmed. But none of the *mutations* locked anything.
+Under Postgres's default isolation, an object edit could read the game as a draft, wait
+while publish committed, then write an unconfirmed position into a game that was now
+live. The reviewer for that task — reading the code cold, with no memory of writing it —
+found the hole; the plan's own reference code had it too. Every draft-only mutation now
+runs in a transaction that takes the game-row lock first, and a deterministic test holds
+the lock from a second connection, proves the edit blocks, publishes under the lock, and
+proves the edit then fails with "not a draft."
+
+**The prescribed fix for a hydration bug failed lint.** The window inputs converted UTC to
+local time during server rendering — in the server's time zone, not the browser's. The
+first fix, setting state in an effect after mount, is exactly the pattern React's newer
+lint rule forbids, and the Stop hook caught it before the commit landed. The working
+pattern uses `useSyncExternalStore` to know when the component is in the browser and
+remounts the inputs once, so their initial state is computed in the right zone with no
+effect at all.
+
+**A missing secret rendered as a pass.** The CI job that runs integration tests skips its
+steps when the database secret is absent — but a job whose steps are skipped still
+reports success, so the PR comment showed a green tick for tests that never ran. The job
+now publishes its own status (`pass`, `skipped`, or nothing), the report renders
+`skipped` as a warning, and the baseline on `main` will not advance until the secrets
+exist.
+
+**Duplication only visible across tasks.** Each task's reviewer saw one diff. The
+whole-branch reviewer saw that "load the game, lock it, require it's a draft" was written
+out four times and "load by public id, require playable" twice, and that the server-action
+wrappers had hand-copied their input types from the functions they wrap. The duplication
+gate in CI would have failed on the first push. Two small helpers and `Parameters<typeof
+fn>` types took the clone count from five to zero.
+
+**Two things the same reviewer found that no test had asked about.** A game master could
+hand `addObject` a storage key belonging to *another* game and receive a fresh signed URL
+for it — closed with a prefix check, `isOwnedKey`. And the leaderboard's fallback for a
+user with no display name was the local part of their email address, which is a small
+information leak on a public board; it is now the word "Player."
+
+**A double-click added an object twice.** Found during the human walkthrough, not by any
+test. The add-object form does not disable its button while the action is in flight.
+Logged as owed UI polish; the duplicate was removed by hand.
+
+### What changed because of it
+
+- `setGeneratedImage` exists for the imagegen stream: it takes no user, locks the game
+  row the same way publish does, refuses a published game, and resets *every* object's
+  confirmation on a new image, not only the ones it proposed positions for. Phase 2 must
+  write through it; writing the columns directly would reopen the race.
+- `/api/generate/*` is no longer public at the proxy. Browser polling carries a session;
+  if imagegen ever needs an inbound webhook it will be whitelisted explicitly.
+- The integration job is serialised (`concurrency` group) so two runs cannot truncate
+  the same branch mid-test.
+- Runtime validation at every action boundary: the `Normalized` brand is a compile-time
+  fiction once JSON has carried a number over the wire, so coordinates, scale, marker
+  shape, asset kind, and ids are all checked before they reach the database.
 
 ### Where this leaves us
 
-`stream/platform` is green: typecheck, lint, 85 unit tests, 40 integration tests against
-the Neon test branch, `npx knip` clean, `npx jscpd src/` at zero, and `npm run build`
-succeeds. Nothing here changed `src/db/schema.ts` or `src/lib/types.ts`, so the imagegen
-and canvas streams are unaffected. The full report for this pass is
-`.superpowers/sdd/2026-09-13-phase-1-platform/final-fix-report.md`.
+`stream/platform` is green: typecheck, lint, 85 unit tests, 40 integration tests
+against the Neon test branch, knip clean, zero duplication, production build succeeds.
+The human walked the authoring flow end to end — sign in, create, upload background and
+object, see publish refuse without an image, see it refuse with an unconfirmed object,
+confirm, set a window, publish to `scheduled`, unpublish — without ever typing a
+coordinate. The stored window matched the typed local time exactly, across a UTC midnight.
+Phase 1 handoff is `docs/handoffs/phase-1.md`; the four things the other streams must
+not break are the first section in it.
 
 ---
 
@@ -400,11 +472,34 @@ Query:
 
 ### Loop 2 — Stop hook recovery (development)
 
-<!--
-Paste a transcript excerpt: implementation finishes → hook blocks on failing tests →
-agent reads failure, fixes, re-verifies → green. No human prompt in the middle.
-Capture this the first time it happens; it is hard to reconstruct later.
--->
+First occurrence: 13 September 2026, Phase 1, Task 9 (master pages), fix round 1.
+
+The orchestrating session had just told a subagent to fix a hydration bug in the window
+inputs by setting state inside a `useEffect`. The subagent applied it and the
+orchestrator tried to end its turn. The Stop hook ran `npm run verify` and refused:
+
+```
+Verification failed. Fix these, then finish.
+
+--- lint ---
+src/app/(master)/games/[id]/window-fields.tsx
+  25:5  error  Calling setState synchronously within an effect can trigger
+        cascading renders ... react-hooks/set-state-in-effect
+> 25 |     setStart(startsAt ? toLocalInputValue(new Date(startsAt)) : "");
+```
+
+The failure went back into the loop as feedback. The orchestrator read it, recognised
+its own instruction as the cause, and sent the subagent a replacement pattern
+(`useSyncExternalStore` to detect the browser, a keyed remount so the inputs initialise
+there — no effect, no `setState`). The hook blocked a second time while the subagent was
+still mid-edit; the orchestrator waited for the commit rather than patching the file
+itself, then re-ran lint: clean. Commit `41baa3d`. No human input between the block and
+the green run.
+
+What the loop demonstrates: the hook does not care who wrote the code or why. A prescribed
+fix from the orchestrator was wrong for this React version, and the environment rejected
+it before it could land. The same lint rule is now part of every implementer's `verify`
+run, so the mistake cannot recur silently.
 
 ---
 
@@ -421,4 +516,8 @@ Mirrors the table in SYSTEM.md §7. Each row started as a correction given twice
 | 2026-09-13 | A crashed tool is not a passing check | `gate.sh` rejects non-numeric metrics |
 | 2026-09-13 | The choke point must decide, not be told | `projectGame` takes `userId` + `now`, derives the rest |
 | 2026-09-13 | Quality must not regress between sessions | CI ratchet: `quality-baseline.json` + `update-baseline` job |
+| 2026-09-13 | Every mutation must lock what publish reads | Game-row `FOR UPDATE` in every draft-only mutation + race test |
+| 2026-09-13 | Numbers over the wire are not `Normalized` | `isNormalized`/`isUuid`/`isOwnedKey` checks at every action boundary |
+| 2026-09-13 | A skipped CI job is not a passing one | `integration` job publishes its own `status`; report renders `skipped` |
+| 2026-09-13 | Reviewers see one task; some defects span tasks | Whole-branch review before merge (dedupe, key ownership, name leak) |
 | 2026-09-13 | File-write hooks are bypassed by shell writes | *Open.* Guard should also match `Bash` and inspect the command for protected paths |
