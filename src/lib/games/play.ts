@@ -22,10 +22,15 @@ function requirePlayable(game: Game, user: User, now: Date): ActionResult<Game> 
   return ok(game);
 }
 
-export async function startAttempt(db: Database, user: User, publicId: string, now: Date): Promise<ActionResult<{ startedAt: Date }>> {
+/** `loadByPublicId` + `requirePlayable`. The common precondition for starting or submitting. */
+async function loadPlayable(db: Database, user: User, publicId: string, now: Date): Promise<ActionResult<Game>> {
   const loaded = await loadByPublicId(db, publicId);
   if (!loaded.ok) return loaded;
-  const playable = requirePlayable(loaded.data, user, now);
+  return requirePlayable(loaded.data, user, now);
+}
+
+export async function startAttempt(db: Database, user: User, publicId: string, now: Date): Promise<ActionResult<{ startedAt: Date }>> {
+  const playable = await loadPlayable(db, user, publicId, now);
   if (!playable.ok) return playable;
   const game = playable.data;
   const inserted = await db
@@ -48,9 +53,7 @@ export async function submitAttempt(
   points: readonly NormalizedPoint[],
   now: Date,
 ): Promise<ActionResult<AttemptResult>> {
-  const loaded = await loadByPublicId(db, publicId);
-  if (!loaded.ok) return loaded;
-  const playable = requirePlayable(loaded.data, user, now);
+  const playable = await loadPlayable(db, user, publicId, now);
   if (!playable.ok) return playable;
   const game = playable.data;
   if (game.imageWidth === null || game.imageHeight === null) return fail("NOT_ACTIVE", "Game image missing");
@@ -92,10 +95,9 @@ export async function submitAttempt(
   });
 }
 
-export async function getPlayerState(db: Database, user: User, publicId: string, now: Date): Promise<ActionResult<PlayerAttemptState>> {
+export async function getPlayerState(db: Database, user: User, publicId: string): Promise<ActionResult<PlayerAttemptState>> {
   const loaded = await loadByPublicId(db, publicId);
   if (!loaded.ok) return loaded;
-  void now;
   const [attempt] = await db
     .select({ startedAt: attempts.startedAt, submittedAt: attempts.submittedAt, foundCount: attempts.foundCount, elapsedMs: attempts.elapsedMs })
     .from(attempts)
@@ -123,7 +125,7 @@ export async function getLeaderboard(db: Database, viewer: User | null, publicId
     if (!own || own.submittedAt === null) return fail("LEADERBOARD_HIDDEN", "Submit your attempt to see the leaderboard");
   }
   const rows = await db
-    .select({ userId: attempts.userId, userName: users.name, email: users.email, foundCount: attempts.foundCount, elapsedMs: attempts.elapsedMs })
+    .select({ userId: attempts.userId, userName: users.name, foundCount: attempts.foundCount, elapsedMs: attempts.elapsedMs })
     .from(attempts)
     .innerJoin(users, eq(users.id, attempts.userId))
     .where(and(eq(attempts.gameId, game.id), isNotNull(attempts.submittedAt)))
@@ -131,7 +133,8 @@ export async function getLeaderboard(db: Database, viewer: User | null, publicId
   return ok(
     rows.map((r, i) => ({
       rank: i + 1,
-      userName: r.userName ?? r.email.split("@")[0],
+      // Never expose an email fragment on the leaderboard.
+      userName: r.userName ?? "Player",
       foundCount: r.foundCount ?? 0,
       elapsedMs: r.elapsedMs ?? 0,
       isViewer: viewer !== null && r.userId === viewer.id,

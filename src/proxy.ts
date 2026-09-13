@@ -1,7 +1,10 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
 // Play pages are public: the server decides per game whether to 404 (SPEC §3.3.1).
-const isPublic = createRouteMatcher(["/", "/g/(.*)", "/sign-in(.*)", "/sign-up(.*)", "/api/generate/(.*)"]);
+// `/api/generate` is NOT public: browser polling carries a Clerk session, and a webhook
+// (if one is ever added) must be whitelisted here explicitly rather than by leaving the
+// whole prefix open.
+const isPublic = createRouteMatcher(["/", "/g/(.*)", "/sign-in(.*)", "/sign-up(.*)"]);
 
 export default clerkMiddleware(async (auth, req) => {
   if (!isPublic(req)) await auth.protect();

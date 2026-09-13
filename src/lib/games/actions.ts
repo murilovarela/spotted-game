@@ -7,10 +7,20 @@ import { revalidatePath } from "next/cache";
 import { getDb } from "@/db";
 import type { User } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth";
-import { isNormalized, type AttemptResult, type LeaderboardEntry, type Normalized, type NormalizedPoint, type PlayerAttemptState } from "@/lib/types";
+import { isNormalized, type AttemptResult, type LeaderboardEntry, type NormalizedPoint, type PlayerAttemptState } from "@/lib/types";
 import * as core from "./games";
 import * as play from "./play";
 import { fail, type ActionResult } from "./result";
+import { isValidScale } from "./validation";
+
+// Hand-copied input shapes here would drift from core's real signatures (jscpd flagged the
+// duplication); these are derived from the functions they call instead. A "use server" file
+// may only export async functions, so these stay unexported.
+type CreateGameInput = Parameters<typeof core.createGame>[2];
+type UpdateGameInput = Parameters<typeof core.updateGame>[3];
+type AddObjectInput = Parameters<typeof core.addObject>[3];
+type UpdateObjectInput = Parameters<typeof core.updateObject>[3];
+type SetWindowInput = Parameters<typeof core.setWindow>[3];
 
 async function withUser<T>(fn: (user: User) => Promise<ActionResult<T>>): Promise<ActionResult<T>> {
   const user = await getCurrentUser();
@@ -28,19 +38,48 @@ function touched(gameId: string): void {
  * brand is a compile-time fiction across the wire. Validate at runtime before handing
  * them to core.
  */
-function toNormalizedPoints(points: ReadonlyArray<{ x: number; y: number }>): NormalizedPoint[] | null {
+function toNormalizedPoints(points: ReadonlyArray<unknown>): NormalizedPoint[] | null {
   const result: NormalizedPoint[] = [];
   for (const p of points) {
-    if (!isNormalized(p.x)) return null;
-    if (!isNormalized(p.y)) return null;
-    result.push({ x: p.x, y: p.y });
+    if (typeof p !== "object" || p === null) return null;
+    const { x, y } = p as { x?: unknown; y?: unknown };
+    if (typeof x !== "number" || !isNormalized(x)) return null;
+    if (typeof y !== "number" || !isNormalized(y)) return null;
+    result.push({ x, y });
   }
   return result;
 }
 
+/**
+ * `x`/`y`/`radius`/`requestedScale` arrive from the client as plain numbers — the branded
+ * types are a compile-time fiction across the wire (same reasoning as `toNormalizedPoints`).
+ * Nothing may throw across the action boundary, so this returns a failure instead.
+ */
+function validatePositionalInput(input: {
+  readonly x?: unknown;
+  readonly y?: unknown;
+  readonly radius?: unknown;
+  readonly requestedScale?: unknown;
+}): ActionResult<null> {
+  for (const [key, value] of [
+    ["x", input.x],
+    ["y", input.y],
+    ["radius", input.radius],
+  ] as const) {
+    if (value === undefined) continue;
+    if (typeof value !== "number" || !isNormalized(value)) {
+      return fail("INVALID_INPUT", `${key} must be a number in [0, 1]`);
+    }
+  }
+  if (input.requestedScale !== undefined && input.requestedScale !== null && !isValidScale(input.requestedScale)) {
+    return fail("INVALID_INPUT", "requestedScale must be a number in (0, 1]");
+  }
+  return { ok: true, data: null };
+}
+
 // --- authoring (called by the master pages) ---
 
-export async function createGameAction(input: { title: string; generalPrompt: string }): Promise<ActionResult<{ id: string; publicId: string }>> {
+export async function createGameAction(input: CreateGameInput): Promise<ActionResult<{ id: string; publicId: string }>> {
   return withUser(async (u) => {
     const r = await core.createGame(getDb(), u, input);
     if (r.ok) revalidatePath("/games");
@@ -48,10 +87,7 @@ export async function createGameAction(input: { title: string; generalPrompt: st
   });
 }
 
-export async function updateGameAction(
-  gameId: string,
-  input: { title?: string; generalPrompt?: string; backgroundKey?: string },
-): Promise<ActionResult<null>> {
+export async function updateGameAction(gameId: string, input: UpdateGameInput): Promise<ActionResult<null>> {
   return withUser(async (u) => {
     const r = await core.updateGame(getDb(), u, gameId, input);
     touched(gameId);
@@ -67,10 +103,9 @@ export async function deleteGameAction(gameId: string): Promise<ActionResult<nul
   });
 }
 
-export async function addObjectAction(
-  gameId: string,
-  input: { label: string; prompt: string; sourceImageKey: string; requestedScale?: Normalized },
-): Promise<ActionResult<{ id: string }>> {
+export async function addObjectAction(gameId: string, input: AddObjectInput): Promise<ActionResult<{ id: string }>> {
+  const v = validatePositionalInput(input);
+  if (!v.ok) return v;
   return withUser(async (u) => {
     const r = await core.addObject(getDb(), u, gameId, input);
     touched(gameId);
@@ -78,19 +113,9 @@ export async function addObjectAction(
   });
 }
 
-export async function updateObjectAction(
-  gameId: string,
-  objectId: string,
-  input: {
-    label?: string;
-    prompt?: string;
-    sourceImageKey?: string;
-    requestedScale?: Normalized | null;
-    x?: Normalized;
-    y?: Normalized;
-    radius?: Normalized;
-  },
-): Promise<ActionResult<null>> {
+export async function updateObjectAction(gameId: string, objectId: string, input: UpdateObjectInput): Promise<ActionResult<null>> {
+  const v = validatePositionalInput(input);
+  if (!v.ok) return v;
   return withUser(async (u) => {
     const r = await core.updateObject(getDb(), u, objectId, input);
     touched(gameId);
@@ -114,7 +139,7 @@ export async function removeObjectAction(gameId: string, objectId: string): Prom
   });
 }
 
-export async function setWindowAction(gameId: string, input: { startsAt: Date; endsAt: Date }): Promise<ActionResult<null>> {
+export async function setWindowAction(gameId: string, input: SetWindowInput): Promise<ActionResult<null>> {
   return withUser(async (u) => {
     const r = await core.setWindow(getDb(), u, gameId, input, new Date());
     touched(gameId);
@@ -155,7 +180,7 @@ export async function submitAttemptAction(
 }
 
 export async function getPlayerStateAction(publicId: string): Promise<ActionResult<PlayerAttemptState>> {
-  return withUser((u) => play.getPlayerState(getDb(), u, publicId, new Date()));
+  return withUser((u) => play.getPlayerState(getDb(), u, publicId));
 }
 
 export async function getLeaderboardAction(publicId: string): Promise<ActionResult<LeaderboardEntry[]>> {

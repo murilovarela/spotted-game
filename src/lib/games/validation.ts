@@ -3,12 +3,24 @@ import { MAX_OBJECTS_PER_GAME, MIN_OBJECTS_PER_GAME } from "@/lib/types";
 import { fail, ok, type ActionResult } from "./result";
 
 const bounded = (value: string, min: number, max: number, what: string): ActionResult<string> => {
+  // `value` is typed as `string`, but a server action's argument crosses a wire boundary
+  // where TypeScript cannot enforce that — a caller that bypasses the type (or a
+  // malformed client) can hand this a non-string at runtime.
+  if (typeof value !== "string") return fail("INVALID_INPUT", `${what} must be a string`);
   const s = value.trim();
   if (s.length < min || s.length > max) {
     return fail("INVALID_INPUT", `${what} must be ${min}–${max} characters`);
   }
   return ok(s);
 };
+
+/**
+ * `requestedScale` is a fraction of image width (SPEC §5.3): the DB CHECK is `> 0`, and
+ * it can never exceed 1 like every other `Normalized` value.
+ */
+export function isValidScale(n: unknown): n is number {
+  return typeof n === "number" && Number.isFinite(n) && n > 0 && n <= 1;
+}
 
 export const validateTitle = (s: string) => bounded(s, 1, 120, "Title");
 export const validateLabel = (s: string) => bounded(s, 1, 60, "Label");

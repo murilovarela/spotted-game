@@ -209,6 +209,9 @@ jobs:
   integration:
     name: Integration (Neon)
     runs-on: ubuntu-latest
+    concurrency:
+      group: integration-neon
+      cancel-in-progress: false
     outputs:
       status: ${{ steps.run.outputs.status || steps.skip.outputs.status }}
     steps:

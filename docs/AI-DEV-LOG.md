@@ -330,6 +330,62 @@ seed fixtures, the Playwright skeleton and its CI job, and the deterministic pas
 
 ---
 
+## Phase 1 — Platform stream: consolidated review fixes
+
+The platform stream (`src/lib/games`, `src/db`, the master pages) had already gone
+through ten individually-reviewed tasks on `stream/platform`. Before merging that branch,
+one more pass ran the whole diff against the review checklist at once, rather than
+task-by-task, on the theory that some findings only show up once every file is read
+together — duplication across functions, for one, is invisible inside a single task's
+diff.
+
+That pass found five things `npx jscpd src/` calls exact duplication: `games.ts` had the
+same "load the game, lock it, require it's a draft" sequence written out four times
+(`updateGame`, `deleteGame`, `addObject`, `setWindow`), `play.ts` had "load the game by
+its public id, then require it's playable" written out twice (`startAttempt`,
+`submitAttempt`), and `actions.ts` had hand-copied input object types that had already
+drifted slightly from the core functions they wrapped. The fix in each case was the same
+shape: extract the repeated sequence into one named function (`loadOwnedDraft`,
+`loadPlayable`) and derive the wrapper types from `Parameters<typeof core.fn>[n]` instead
+of retyping them by hand. `npx jscpd src/` went from 5 clones (2.01%) to 0.
+
+The same pass added a check that had never been exercised: nothing stopped a game master
+from handing `updateGame` or `addObject` a storage key that belonged to a *different*
+game — the functions trusted whatever key string arrived. `isOwnedKey(kind, gameId, key)`
+in `src/lib/storage.ts` closes that: a key must start with `games/<gameId>/<kind>/` and
+carry no `..` segment. The existing integration tests had been using placeholder keys
+like `"games/x/background/a.png"` and `"k0"` that never belonged to any real game, which
+would now fail the new check — they were rewritten to build keys from the game id the
+test actually created.
+
+The other addition worth naming is `setGeneratedImage`, the function the imagegen stream
+calls when a generation run finishes. It takes no `User` — there is no human in that call
+path — locks the game row the same way `publishGame` does, and resets every object's
+`confirmed` flag on a new image, not just the ones the run proposed a position for. That
+last part matters: a stale confirmed position from a previous image is a silent
+correctness bug (invariant 4 exists precisely to keep an unreviewed position out of a
+published game), so the reset has to be unconditional and the proposal application
+additive on top of it.
+
+Everything else in the pass was smaller: `unpublishGame`'s write became a conditional
+`UPDATE ... WHERE published_at IS NOT NULL AND starts_at > now()` instead of a check-then-write,
+the leaderboard's name fallback changed from the email's local part to a fixed `"Player"`
+string (an email fragment on a public leaderboard was a small information leak nobody had
+flagged until this pass), and the authoring server actions gained runtime validation —
+`isNormalized` and a new `isValidScale` — for the coordinate and scale fields that cross
+the client/server boundary as plain numbers, since a branded TypeScript type is a
+compile-time fiction once JSON has carried it over the wire.
+
+### Where this leaves us
+
+`stream/platform` is green: typecheck, lint, 85 unit tests, 40 integration tests against
+the Neon test branch, `npx knip` clean, `npx jscpd src/` at zero, and `npm run build`
+succeeds. Nothing here changed `src/db/schema.ts` or `src/lib/types.ts`, so the imagegen
+and canvas streams are unaffected. The full report for this pass is
+`.superpowers/sdd/2026-09-13-phase-1-platform/final-fix-report.md`.
+
+---
+
 ## Autonomous loop evidence
 
 ### Loop 1 — Generation retry (product)

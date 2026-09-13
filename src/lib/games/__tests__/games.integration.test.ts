@@ -5,7 +5,7 @@ import { games, objects, users, type User } from "@/db/schema";
 import { normalized } from "@/lib/types";
 import {
   addObject, confirmObject, createGame, deleteGame, publishGame, removeObject,
-  setWindow, unpublishGame, updateGame, updateObject,
+  setGeneratedImage, setWindow, unpublishGame, updateGame, updateObject,
 } from "../games";
 
 const { db, close } = createTestDb();
@@ -23,12 +23,18 @@ beforeEach(async () => {
 });
 afterAll(() => close());
 
+// Storage keys are namespaced by game id and asset kind (isOwnedKey); tests build them
+// from a real gameId rather than using an arbitrary placeholder.
+const backgroundKeyFor = (gameId: string) => `games/${gameId}/background/a.png`;
+const objectKeyFor = (gameId: string, name: string) => `games/${gameId}/object/${name}.png`;
+const generatedKeyFor = (gameId: string, name: string) => `games/${gameId}/generated/${name}.png`;
+
 async function draftWithConfirmedObject() {
   const g = await createGame(db, master, { title: "Kitchen", generalPrompt: "" });
   if (!g.ok) throw new Error(g.message);
-  await updateGame(db, master, g.data.id, { backgroundKey: "games/x/background/a.png" });
-  await db.update(games).set({ generatedImageKey: "games/x/gen/1.png", imageWidth: 1000, imageHeight: 800 }).where(eq(games.id, g.data.id));
-  const o = await addObject(db, master, g.data.id, { label: "mug", prompt: "", sourceImageKey: "games/x/object/m.png" });
+  await updateGame(db, master, g.data.id, { backgroundKey: backgroundKeyFor(g.data.id) });
+  await db.update(games).set({ generatedImageKey: generatedKeyFor(g.data.id, "1"), imageWidth: 1000, imageHeight: 800 }).where(eq(games.id, g.data.id));
+  const o = await addObject(db, master, g.data.id, { label: "mug", prompt: "", sourceImageKey: objectKeyFor(g.data.id, "m") });
   if (!o.ok) throw new Error(o.message);
   await updateObject(db, master, o.data.id, { x: normalized(0.5), y: normalized(0.5), radius: normalized(0.05) });
   await confirmObject(db, master, o.data.id);
@@ -67,9 +73,9 @@ describe("objects", () => {
     const g = await createGame(db, master, { title: "t", generalPrompt: "" });
     if (!g.ok) throw new Error();
     for (let i = 0; i < 5; i++) {
-      expect((await addObject(db, master, g.data.id, { label: `o${i}`, prompt: "", sourceImageKey: `k${i}` })).ok).toBe(true);
+      expect((await addObject(db, master, g.data.id, { label: `o${i}`, prompt: "", sourceImageKey: objectKeyFor(g.data.id, `k${i}`) })).ok).toBe(true);
     }
-    expect(await addObject(db, master, g.data.id, { label: "six", prompt: "", sourceImageKey: "k6" })).toMatchObject({ error: "TOO_MANY_OBJECTS" });
+    expect(await addObject(db, master, g.data.id, { label: "six", prompt: "", sourceImageKey: objectKeyFor(g.data.id, "k6") })).toMatchObject({ error: "TOO_MANY_OBJECTS" });
     const rows = await db.select({ sortOrder: objects.sortOrder }).from(objects).where(eq(objects.gameId, g.data.id)).orderBy(objects.sortOrder);
     expect(rows.map((r) => r.sortOrder)).toEqual([0, 1, 2, 3, 4]);
   });
@@ -93,7 +99,7 @@ describe("objects", () => {
   it("confirm requires a position", async () => {
     const g = await createGame(db, master, { title: "t", generalPrompt: "" });
     if (!g.ok) throw new Error();
-    const o = await addObject(db, master, g.data.id, { label: "o", prompt: "", sourceImageKey: "k" });
+    const o = await addObject(db, master, g.data.id, { label: "o", prompt: "", sourceImageKey: objectKeyFor(g.data.id, "o") });
     if (!o.ok) throw new Error();
     expect(await confirmObject(db, master, o.data.id)).toMatchObject({ error: "INVALID_INPUT" });
   });
@@ -103,7 +109,7 @@ describe("objects", () => {
     if (!g.ok) throw new Error();
     const ids: string[] = [];
     for (let i = 0; i < 3; i++) {
-      const o = await addObject(db, master, g.data.id, { label: `o${i}`, prompt: "", sourceImageKey: `k${i}` });
+      const o = await addObject(db, master, g.data.id, { label: `o${i}`, prompt: "", sourceImageKey: objectKeyFor(g.data.id, `k${i}`) });
       if (!o.ok) throw new Error();
       ids.push(o.data.id);
     }
@@ -190,6 +196,72 @@ describe("concurrency (invariant 4)", () => {
     } finally {
       await close2();
     }
+  });
+});
+
+describe("storage key ownership", () => {
+  it("rejects an image key that does not belong to the game (background, object)", async () => {
+    const g = await createGame(db, master, { title: "t", generalPrompt: "" });
+    if (!g.ok) throw new Error();
+    expect(await updateGame(db, master, g.data.id, { backgroundKey: "games/some-other-game/background/a.png" })).toMatchObject({
+      ok: false,
+      error: "INVALID_INPUT",
+    });
+    expect(
+      await addObject(db, master, g.data.id, { label: "o", prompt: "", sourceImageKey: "games/some-other-game/object/o.png" }),
+    ).toMatchObject({ ok: false, error: "INVALID_INPUT" });
+
+    const o = await addObject(db, master, g.data.id, { label: "o", prompt: "", sourceImageKey: objectKeyFor(g.data.id, "o") });
+    if (!o.ok) throw new Error();
+    expect(await updateObject(db, master, o.data.id, { sourceImageKey: "games/some-other-game/object/o2.png" })).toMatchObject({
+      ok: false,
+      error: "INVALID_INPUT",
+    });
+  });
+});
+
+describe("setGeneratedImage", () => {
+  it("writes dims, applies proposed positions, and resets confirmed for every object (even ones without a proposal)", async () => {
+    const g = await createGame(db, master, { title: "t", generalPrompt: "" });
+    if (!g.ok) throw new Error();
+    const a = await addObject(db, master, g.data.id, { label: "a", prompt: "", sourceImageKey: objectKeyFor(g.data.id, "a") });
+    const b = await addObject(db, master, g.data.id, { label: "b", prompt: "", sourceImageKey: objectKeyFor(g.data.id, "b") });
+    if (!a.ok || !b.ok) throw new Error();
+    await updateObject(db, master, a.data.id, { x: normalized(0.1), y: normalized(0.1), radius: normalized(0.02) });
+    await confirmObject(db, master, a.data.id);
+
+    const key = generatedKeyFor(g.data.id, "gen");
+    const r = await setGeneratedImage(
+      db,
+      g.data.id,
+      { key, width: 1200, height: 900 },
+      [{ objectId: b.data.id, x: normalized(0.6), y: normalized(0.7), radius: normalized(0.03) }],
+    );
+    expect(r.ok).toBe(true);
+
+    const [row] = await db.select().from(games).where(eq(games.id, g.data.id));
+    expect(row).toMatchObject({ generatedImageKey: key, imageWidth: 1200, imageHeight: 900 });
+
+    const rows = await db.select().from(objects).where(eq(objects.gameId, g.data.id)).orderBy(objects.sortOrder);
+    // `a` had a confirmed position but no proposal this run: position untouched, confirmed reset.
+    expect(rows[0]).toMatchObject({ x: 0.1, y: 0.1, radius: 0.02, confirmed: false });
+    // `b` got this run's proposed position, also unconfirmed.
+    expect(rows[1]).toMatchObject({ x: 0.6, y: 0.7, radius: 0.03, confirmed: false });
+  });
+
+  it("rejects a published game with NOT_DRAFT", async () => {
+    const { gameId } = await draftWithConfirmedObject();
+    await publishGame(db, master, gameId, now);
+    const key = generatedKeyFor(gameId, "gen2");
+    expect(await setGeneratedImage(db, gameId, { key, width: 100, height: 100 }, [])).toMatchObject({ ok: false, error: "NOT_DRAFT" });
+  });
+
+  it("rejects a key that does not belong to the game with INVALID_INPUT", async () => {
+    const g = await createGame(db, master, { title: "t", generalPrompt: "" });
+    if (!g.ok) throw new Error();
+    expect(
+      await setGeneratedImage(db, g.data.id, { key: "games/some-other-game/generated/gen.png", width: 100, height: 100 }, []),
+    ).toMatchObject({ ok: false, error: "INVALID_INPUT" });
   });
 });
 

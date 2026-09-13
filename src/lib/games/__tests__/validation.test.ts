@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isUuid,
+  isValidScale,
   publishPreconditions,
   validateLabel,
   validateMarkerCount,
@@ -30,6 +31,30 @@ describe("validateLabel / validatePrompt", () => {
     expect(validateLabel("x".repeat(61))).toMatchObject({ ok: false });
     expect(validatePrompt("")).toEqual({ ok: true, data: "" });
     expect(validatePrompt("x".repeat(501))).toMatchObject({ ok: false });
+  });
+
+  it("rejects a non-string value at runtime rather than throwing (a server action's argument crosses an untyped boundary)", () => {
+    expect(validateTitle(42 as unknown as string)).toMatchObject({ ok: false, error: "INVALID_INPUT" });
+    expect(validateLabel(null as unknown as string)).toMatchObject({ ok: false, error: "INVALID_INPUT" });
+    expect(validatePrompt(undefined as unknown as string)).toMatchObject({ ok: false, error: "INVALID_INPUT" });
+    expect(validateTitle({} as unknown as string)).toMatchObject({ ok: false, error: "INVALID_INPUT" });
+  });
+});
+
+describe("isValidScale", () => {
+  it("accepts a finite number in (0, 1]", () => {
+    expect(isValidScale(0.5)).toBe(true);
+    expect(isValidScale(1)).toBe(true);
+  });
+  it("rejects 0, negatives, values above 1, non-finite numbers, and non-numbers", () => {
+    expect(isValidScale(0)).toBe(false);
+    expect(isValidScale(-0.1)).toBe(false);
+    expect(isValidScale(1.1)).toBe(false);
+    expect(isValidScale(Number.NaN)).toBe(false);
+    expect(isValidScale(Number.POSITIVE_INFINITY)).toBe(false);
+    expect(isValidScale("0.5")).toBe(false);
+    expect(isValidScale(null)).toBe(false);
+    expect(isValidScale(undefined)).toBe(false);
   });
 });
 

@@ -11,7 +11,7 @@ export const BUCKET = "assets"; // declared in neon.ts, private
 const ALLOWED = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" } as const;
 export type AllowedImageType = keyof typeof ALLOWED;
 
-export const ASSET_KINDS = ["background", "object"] as const;
+export const ASSET_KINDS = ["background", "object", "generated"] as const;
 export type AssetKind = (typeof ASSET_KINDS)[number];
 
 export function isAllowedImageType(ct: string): ct is AllowedImageType {
@@ -25,6 +25,17 @@ export function isAssetKind(s: string): s is AssetKind {
 export function objectKey(kind: AssetKind, gameId: string, contentType: string): string {
   if (!isAllowedImageType(contentType)) throw new Error(`Disallowed content type ${contentType}`);
   return `games/${gameId}/${kind}/${nanoid()}.${ALLOWED[contentType]}`;
+}
+
+/**
+ * True iff `key` lives under this game's namespace for `kind` and carries no `..`
+ * segment (path traversal). Pure — no I/O — so a caller-supplied key can be checked
+ * before it is ever written to a row.
+ */
+export function isOwnedKey(kind: AssetKind, gameId: string, key: string): boolean {
+  const prefix = `games/${gameId}/${kind}/`;
+  if (!key.startsWith(prefix)) return false;
+  return !key.split("/").includes("..");
 }
 
 let client: S3Client | undefined;

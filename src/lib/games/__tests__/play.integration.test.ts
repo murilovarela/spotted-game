@@ -75,11 +75,11 @@ describe("submitAttempt", () => {
 
 describe("getPlayerState", () => {
   it("walks not_started → in_progress → submitted", async () => {
-    expect(await getPlayerState(db, p1, PUB, ms(startsAt, 1))).toEqual({ ok: true, data: { kind: "not_started" } });
+    expect(await getPlayerState(db, p1, PUB)).toEqual({ ok: true, data: { kind: "not_started" } });
     await startAttempt(db, p1, PUB, ms(startsAt, 1000));
-    expect(await getPlayerState(db, p1, PUB, ms(startsAt, 2000))).toMatchObject({ ok: true, data: { kind: "in_progress" } });
+    expect(await getPlayerState(db, p1, PUB)).toMatchObject({ ok: true, data: { kind: "in_progress" } });
     await submitAttempt(db, p1, PUB, [pt(0.2, 0.2), pt(0.8, 0.8)], ms(startsAt, 4000));
-    expect(await getPlayerState(db, p1, PUB, ms(startsAt, 5000))).toEqual({ ok: true, data: { kind: "submitted", result: { foundCount: 2, elapsedMs: 3000 } } });
+    expect(await getPlayerState(db, p1, PUB)).toEqual({ ok: true, data: { kind: "submitted", result: { foundCount: 2, elapsedMs: 3000 } } });
   });
 });
 
