@@ -1,0 +1,7 @@
+[allowlist]
+  description = "Documentation and test fixtures may contain example values"
+  paths = [
+    '''docs/.*''',
+    '''.*\.test\.ts$''',
+    '''\.env\.example$''',
+  ]

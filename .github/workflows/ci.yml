@@ -1,0 +1,372 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Every numeric check compares against quality-baseline.json and fails on regression.
+# The baseline is rewritten by the update-baseline job after a green run on main.
+
+jobs:
+  lint:
+    name: Lint (ESLint)
+    runs-on: ubuntu-latest
+    outputs:
+      violations: ${{ steps.run.outputs.violations }}
+      status: ${{ steps.run.outputs.status }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - id: run
+        shell: bash
+        run: |
+          set +e
+          npx eslint . -f json > /tmp/eslint.json 2>/dev/null
+          violations=$(jq '[.[] | .errorCount + .warningCount] | add // 0' /tmp/eslint.json 2>/dev/null || echo "0")
+          echo "violations=$violations" >> $GITHUB_OUTPUT
+          baseline=$(jq '.lintViolations' quality-baseline.json)
+          if [ "$violations" -gt "$baseline" ]; then
+            echo "status=fail" >> $GITHUB_OUTPUT
+            npx eslint . --max-warnings=0 || true
+            exit 1
+          fi
+          echo "status=pass" >> $GITHUB_OUTPUT
+
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    outputs:
+      status: ${{ steps.run.outputs.status }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - id: run
+        shell: bash
+        run: |
+          if npx tsc --noEmit; then
+            echo "status=pass" >> $GITHUB_OUTPUT
+          else
+            echo "status=fail" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+  test:
+    name: Tests + Coverage
+    runs-on: ubuntu-latest
+    outputs:
+      coverage: ${{ steps.run.outputs.coverage }}
+      status: ${{ steps.run.outputs.status }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - id: run
+        shell: bash
+        run: |
+          npm run test:cov
+          coverage=$(jq '.total.lines.pct' coverage/coverage-summary.json 2>/dev/null || echo "0")
+          echo "coverage=$coverage" >> $GITHUB_OUTPUT
+          baseline=$(jq '.coverage' quality-baseline.json)
+          if (( $(echo "$coverage < $baseline" | bc -l) )); then
+            echo "status=fail" >> $GITHUB_OUTPUT
+            echo "Coverage ${coverage}% is below baseline ${baseline}%"
+            exit 1
+          fi
+          echo "status=pass" >> $GITHUB_OUTPUT
+
+  secrets:
+    name: Secrets Scan (gitleaks)
+    runs-on: ubuntu-latest
+    outputs:
+      status: ${{ steps.run.outputs.status }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: run
+        shell: bash
+        run: |
+          curl -sSfL \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz \
+            | tar -xz gitleaks
+          if ./gitleaks detect --source . -v --config .gitleaks.toml; then
+            echo "status=pass" >> $GITHUB_OUTPUT
+          else
+            echo "status=fail" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+  audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    outputs:
+      high: ${{ steps.run.outputs.high }}
+      status: ${{ steps.run.outputs.status }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - id: run
+        shell: bash
+        run: |
+          set +e
+          npm audit --json > audit-output.json 2>/dev/null
+          high=$(jq '(.metadata.vulnerabilities.high // 0) + (.metadata.vulnerabilities.critical // 0)' audit-output.json 2>/dev/null || echo "0")
+          echo "high=$high" >> $GITHUB_OUTPUT
+          baseline=$(jq '.auditHigh' quality-baseline.json)
+          if [ "$high" -gt "$baseline" ]; then
+            echo "status=fail" >> $GITHUB_OUTPUT
+            npm audit --audit-level=high || true
+            exit 1
+          fi
+          echo "status=pass" >> $GITHUB_OUTPUT
+
+  duplication:
+    name: Code Duplication (jscpd)
+    runs-on: ubuntu-latest
+    outputs:
+      pct: ${{ steps.run.outputs.pct }}
+      status: ${{ steps.run.outputs.status }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - id: run
+        shell: bash
+        run: |
+          mkdir -p report
+          npx jscpd src/ --reporters=json --output=report/ 2>/dev/null || true
+          pct=$(jq '.statistics.total.percentage // 0' report/jscpd-report.json 2>/dev/null || echo "0")
+          echo "pct=$pct" >> $GITHUB_OUTPUT
+          baseline=$(jq '.duplication' quality-baseline.json)
+          if (( $(echo "$pct > $baseline" | bc -l) )); then
+            echo "status=fail" >> $GITHUB_OUTPUT
+            echo "Duplication ${pct}% exceeds baseline ${baseline}%"
+            npx jscpd src/ --reporters=console || true
+            exit 1
+          fi
+          echo "status=pass" >> $GITHUB_OUTPUT
+
+  security:
+    name: Security Scan (semgrep)
+    runs-on: ubuntu-latest
+    outputs:
+      errors: ${{ steps.run.outputs.errors }}
+      status: ${{ steps.run.outputs.status }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install semgrep
+      - id: run
+        shell: bash
+        run: |
+          set +e
+          semgrep scan --config=p/security-audit src/ --json > semgrep-results.json 2>/dev/null
+          errors=$(jq '[.results[] | select(.extra.severity == "ERROR")] | length' semgrep-results.json 2>/dev/null || echo "0")
+          echo "errors=$errors" >> $GITHUB_OUTPUT
+          baseline=$(jq '.securityErrors' quality-baseline.json)
+          if [ "$errors" -gt "$baseline" ]; then
+            echo "status=fail" >> $GITHUB_OUTPUT
+            jq -r '.results[] | select(.extra.severity == "ERROR") | "\(.path):\(.start.line) — \(.extra.message)"' semgrep-results.json
+            exit 1
+          fi
+          echo "status=pass" >> $GITHUB_OUTPUT
+
+  unused:
+    name: Unused Code (knip)
+    runs-on: ubuntu-latest
+    outputs:
+      count: ${{ steps.run.outputs.count }}
+      status: ${{ steps.run.outputs.status }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - id: run
+        shell: bash
+        run: |
+          set +e
+          npx knip --reporter=json > knip-output.json 2>/dev/null
+          count=$(jq '
+            [.issues[] |
+              (.files | length) + (.exports | length) + (.types | length) +
+              (.dependencies | length) + (.devDependencies | length) +
+              (.unlisted | length) + (.unresolved | length) + (.duplicates | length) +
+              (.enumMembers | length) + (.namespaceMembers | length) + (.binaries | length)
+            ] | add // 0
+          ' knip-output.json 2>/dev/null || echo "0")
+          echo "count=$count" >> $GITHUB_OUTPUT
+          baseline=$(jq '.unusedExports' quality-baseline.json)
+          if [ "$count" -gt "$baseline" ]; then
+            echo "status=fail" >> $GITHUB_OUTPUT
+            npx knip || true
+            exit 1
+          fi
+          echo "status=pass" >> $GITHUB_OUTPUT
+
+  report:
+    name: Quality Report
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck, test, secrets, audit, duplication, security, unused]
+    if: always() && github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/github-script@v7
+        env:
+          LINT_STATUS: ${{ needs.lint.outputs.status }}
+          LINT_VIOLATIONS: ${{ needs.lint.outputs.violations }}
+          TYPECHECK_RESULT: ${{ needs.typecheck.result }}
+          TEST_STATUS: ${{ needs.test.outputs.status }}
+          TEST_COVERAGE: ${{ needs.test.outputs.coverage }}
+          SECRETS_RESULT: ${{ needs.secrets.result }}
+          AUDIT_STATUS: ${{ needs.audit.outputs.status }}
+          AUDIT_HIGH: ${{ needs.audit.outputs.high }}
+          DUPLICATION_STATUS: ${{ needs.duplication.outputs.status }}
+          DUPLICATION_PCT: ${{ needs.duplication.outputs.pct }}
+          SECURITY_STATUS: ${{ needs.security.outputs.status }}
+          SECURITY_ERRORS: ${{ needs.security.outputs.errors }}
+          UNUSED_STATUS: ${{ needs.unused.outputs.status }}
+          UNUSED_COUNT: ${{ needs.unused.outputs.count }}
+        with:
+          script: |
+            const fs = require('fs');
+            const baseline = JSON.parse(fs.readFileSync('quality-baseline.json', 'utf8'));
+
+            const icon = s => {
+              if (s === 'pass' || s === 'success') return '✅';
+              if (s === 'skipped' || s === 'cancelled') return '⚠️';
+              return '❌';
+            };
+
+            const fmt = (val, unit) => {
+              if (val == null || val === '' || val === 'undefined') return '—';
+              return unit === '%' ? `${parseFloat(val).toFixed(1)}%` : `${val} ${unit}`.trim();
+            };
+
+            const delta = (prev, curr, lowerIsBetter) => {
+              if (prev == null || curr == null || curr === '' || curr === 'undefined') return '—';
+              const d = parseFloat(curr) - parseFloat(prev);
+              if (Math.abs(d) < 0.05) return '—';
+              const improving = lowerIsBetter ? d < 0 : d > 0;
+              const sign = d > 0 ? '+' : '';
+              return `${sign}${d.toFixed(1)} ${improving ? '✅' : '❌'}`;
+            };
+
+            const checks = [
+              { name: 'lint',        status: process.env.LINT_STATUS,       prev: baseline.lintViolations, curr: process.env.LINT_VIOLATIONS,   unit: 'violations', lower: true  },
+              { name: 'typecheck',   status: process.env.TYPECHECK_RESULT === 'success' ? 'pass' : 'fail', prev: null, curr: null, unit: null },
+              { name: 'test',        status: process.env.TEST_STATUS,        prev: baseline.coverage,       curr: process.env.TEST_COVERAGE,     unit: '%',          lower: false },
+              { name: 'secrets',     status: process.env.SECRETS_RESULT === 'success' ? 'pass' : 'fail',  prev: null, curr: null, unit: null },
+              { name: 'audit',       status: process.env.AUDIT_STATUS,       prev: baseline.auditHigh,      curr: process.env.AUDIT_HIGH,        unit: 'high/crit',  lower: true  },
+              { name: 'duplication', status: process.env.DUPLICATION_STATUS, prev: baseline.duplication,    curr: process.env.DUPLICATION_PCT,   unit: '%',          lower: true  },
+              { name: 'security',    status: process.env.SECURITY_STATUS,    prev: baseline.securityErrors, curr: process.env.SECURITY_ERRORS,   unit: 'errors',     lower: true  },
+              { name: 'unused',      status: process.env.UNUSED_STATUS,      prev: baseline.unusedExports,  curr: process.env.UNUSED_COUNT,      unit: 'issues',     lower: true  },
+            ];
+
+            const rows = checks.map(c =>
+              `| ${c.name} | ${icon(c.status)} | ${fmt(c.prev, c.unit)} | ${fmt(c.curr, c.unit)} | ${c.prev != null ? delta(c.prev, c.curr, c.lower) : '—'} |`
+            );
+
+            const body = [
+              '## CI Quality Gate',
+              '',
+              '| Check | Status | Previous | Current | Delta |',
+              '|---|---|---|---|---|',
+              ...rows,
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = comments.find(c => c.body.startsWith('## CI Quality Gate'));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+  update-baseline:
+    name: Update Quality Baseline
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck, test, secrets, audit, duplication, security, unused]
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.lint.result == 'success' &&
+      needs.typecheck.result == 'success' &&
+      needs.test.result == 'success' &&
+      needs.secrets.result == 'success' &&
+      needs.audit.result == 'success' &&
+      needs.duplication.result == 'success' &&
+      needs.security.result == 'success' &&
+      needs.unused.result == 'success'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - env:
+          COVERAGE: ${{ needs.test.outputs.coverage }}
+          DUPLICATION: ${{ needs.duplication.outputs.pct }}
+          AUDIT_HIGH: ${{ needs.audit.outputs.high }}
+          SECURITY_ERRORS: ${{ needs.security.outputs.errors }}
+          UNUSED_COUNT: ${{ needs.unused.outputs.count }}
+          LINT_VIOLATIONS: ${{ needs.lint.outputs.violations }}
+        shell: bash
+        run: |
+          node -e "
+            const data = {
+              coverage: parseFloat(process.env.COVERAGE) || 0,
+              duplication: parseFloat(process.env.DUPLICATION) || 0,
+              auditHigh: parseInt(process.env.AUDIT_HIGH) || 0,
+              securityErrors: parseInt(process.env.SECURITY_ERRORS) || 0,
+              unusedExports: parseInt(process.env.UNUSED_COUNT) || 0,
+              lintViolations: parseInt(process.env.LINT_VIOLATIONS) || 0,
+            };
+            require('fs').writeFileSync('quality-baseline.json', JSON.stringify(data, null, 2) + '\n');
+          "
+      - shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add quality-baseline.json
+          git diff --staged --quiet || git commit -m "chore: update quality baseline [skip ci]"
+          git push

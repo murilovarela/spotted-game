@@ -204,6 +204,41 @@ correction to absorb.
 - The initial migration `src/db/migrations/0000_init.sql` was produced by
   `drizzle-kit generate`, never by hand.
 
+### CI quality gate
+
+The Stop hook guards a single session; CI guards `main`. The workflow in
+`.github/workflows/ci.yml` runs eight checks in parallel on every pull request — lint,
+type check, tests with coverage, secret scanning, dependency audit, code duplication, a
+security scan, and unused code — and posts one comment on the PR showing each check's
+previous value, current value, and delta.
+
+The numbers are a ratchet. `quality-baseline.json` holds the last known values; a PR fails
+if any metric gets worse, and a green merge to `main` rewrites the baseline with the new
+values. Quality can only move one way. The pattern was lifted from an earlier project of
+the author's and adapted from pnpm and Biome to npm and ESLint.
+
+Setting the baseline meant getting to zero first, and the unused-code check found four
+things on its first run. `@next/env` was imported directly by `drizzle.config.ts` but only
+present as a transitive dependency of Next — now declared. `isHit` in `scoring.ts` was
+exported and never called; deleted, with its comment folded into `scoreAttempt`.
+`nanoid` is listed but unused until Stream A generates public ids; ignored with a note
+rather than removed and re-added. `tailwindcss` looked unused because knip was not
+following CSS imports; fixed by adding `.css` to the project glob, not by ignoring it.
+
+The first CI run failed on every job that installs packages, in ten seconds each. Two
+causes, found one after the other. First, `@types/node` was pinned to version 20 while
+vitest 5 wants 22 or newer; the project already runs Node 22, so the types were simply
+bumped. Second, and less obvious: the committed lockfile was built on a machine whose
+global npm config had `legacy-peer-deps=true`, which quietly ignores peer-dependency
+conflicts. CI runs `npm ci` strictly and refused the lockfile. A local `npm ci` had passed
+because it read the same lenient config. Regenerated the lockfile with peers respected
+and added a project `.npmrc` so a local install can never again differ from CI.
+
+Coverage is measured over `src/**/*.ts` only. Pages under `src/app` are UI, verified by
+Playwright, and would drag the number without saying anything about correctness. First
+baseline: 81% lines, everything else at zero. The E2E job is still missing — SPEC §8 calls
+for it and it lands with the Playwright skeleton.
+
 ### Where this leaves us
 
 `npm run verify` is green: type check, lint, and 39 unit tests across scoring, types, and
@@ -245,4 +280,5 @@ Mirrors the table in SYSTEM.md §7. Each row started as a correction given twice
 | pre-build | Hooks must not depend on tools that may be absent | Node rewrite; guard paths tested |
 | 2026-09-13 | Tests must run on the same Node everywhere | `.tool-versions`, `.nvmrc`, `engines` in `package.json` |
 | 2026-09-13 | Float boundary tests need binary-exact values | Comment in `scoring.test.ts`; squared-distance compare in `scoring.ts` |
+| 2026-09-13 | Lockfile must resolve the way CI resolves it | Project `.npmrc` with `legacy-peer-deps=false` |
 | 2026-09-13 | File-write hooks are bypassed by shell writes | *Open.* Guard should also match `Bash` and inspect the command for protected paths |
