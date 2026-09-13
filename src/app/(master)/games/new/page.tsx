@@ -1,8 +1,11 @@
 import { redirect } from "next/navigation";
 import { createGameAction } from "@/lib/games/actions";
+import { getCurrentUser } from "@/lib/auth";
 
 export default async function NewGamePage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error } = await searchParams;
+  const user = await getCurrentUser();
+  if (!user) redirect("/sign-in");
 
   async function create(formData: FormData) {
     "use server";

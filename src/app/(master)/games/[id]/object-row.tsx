@@ -1,15 +1,16 @@
 import type { ObjectForMaster } from "@/lib/types";
 import { confirmObjectAction, removeObjectAction } from "@/lib/games/actions";
+import { redirectBack } from "./redirect-back";
 
 export function ObjectRow({ gameId, object, editable }: { gameId: string; object: ObjectForMaster; editable: boolean }) {
   const objectId = object.id;
   async function confirm() {
     "use server";
-    await confirmObjectAction(gameId, objectId);
+    redirectBack(gameId, await confirmObjectAction(gameId, objectId));
   }
   async function remove() {
     "use server";
-    await removeObjectAction(gameId, objectId);
+    redirectBack(gameId, await removeObjectAction(gameId, objectId));
   }
   const pos = object.x === null ? "no position yet" : `x ${object.x.toFixed(3)} · y ${object.y?.toFixed(3)} · r ${object.radius?.toFixed(3)}`;
   return (

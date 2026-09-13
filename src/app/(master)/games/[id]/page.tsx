@@ -6,17 +6,9 @@ import { loadGameForMasterById } from "@/lib/games/queries";
 import { MAX_OBJECTS_PER_GAME } from "@/lib/types";
 import { AddObjectForm } from "./add-object-form";
 import { ObjectRow } from "./object-row";
+import { redirectBack } from "./redirect-back";
 import { UploadField } from "./upload-field";
 import { WindowFields } from "./window-fields";
-
-/**
- * Module-level so inline server actions below can call it by passing only serializable
- * arguments (a string id, a plain result object) — a closure over a function value is not
- * serializable and would fail at runtime.
- */
-function redirectBack(gameId: string, r: { ok: boolean; message?: string }): never {
-  redirect(`/games/${gameId}${r.ok ? "" : `?error=${encodeURIComponent(r.message ?? "")}`}`);
-}
 
 export default async function EditGamePage({
   params,
@@ -104,7 +96,11 @@ export default async function EditGamePage({
       <section>
         <h2 className="mb-2 font-medium">Window</h2>
         <form action={saveWindow} className="flex flex-col gap-3">
-          <WindowFields startsAt={game.startsAt?.toISOString() ?? null} endsAt={game.endsAt?.toISOString() ?? null} />
+          <WindowFields
+            startsAt={game.startsAt?.toISOString() ?? null}
+            endsAt={game.endsAt?.toISOString() ?? null}
+            disabled={!editable}
+          />
           {editable && <button className="self-start rounded border px-3 py-2">Save window</button>}
         </form>
       </section>
