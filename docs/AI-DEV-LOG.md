@@ -204,6 +204,32 @@ correction to absorb.
 - The initial migration `src/db/migrations/0000_init.sql` was produced by
   `drizzle-kit generate`, never by hand.
 
+### CI quality gate
+
+The Stop hook guards a single session; CI guards `main`. The workflow in
+`.github/workflows/ci.yml` runs eight checks in parallel on every pull request — lint,
+type check, tests with coverage, secret scanning, dependency audit, code duplication, a
+security scan, and unused code — and posts one comment on the PR showing each check's
+previous value, current value, and delta.
+
+The numbers are a ratchet. `quality-baseline.json` holds the last known values; a PR fails
+if any metric gets worse, and a green merge to `main` rewrites the baseline with the new
+values. Quality can only move one way. The pattern was lifted from an earlier project of
+the author's and adapted from pnpm and Biome to npm and ESLint.
+
+Setting the baseline meant getting to zero first, and the unused-code check found four
+things on its first run. `@next/env` was imported directly by `drizzle.config.ts` but only
+present as a transitive dependency of Next — now declared. `isHit` in `scoring.ts` was
+exported and never called; deleted, with its comment folded into `scoreAttempt`.
+`nanoid` is listed but unused until Stream A generates public ids; ignored with a note
+rather than removed and re-added. `tailwindcss` looked unused because knip was not
+following CSS imports; fixed by adding `.css` to the project glob, not by ignoring it.
+
+Coverage is measured over `src/**/*.ts` only. Pages under `src/app` are UI, verified by
+Playwright, and would drag the number without saying anything about correctness. First
+baseline: 81% lines, everything else at zero. The E2E job is still missing — SPEC §8 calls
+for it and it lands with the Playwright skeleton.
+
 ### Where this leaves us
 
 `npm run verify` is green: type check, lint, and 39 unit tests across scoring, types, and

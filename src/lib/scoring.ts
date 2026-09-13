@@ -25,15 +25,10 @@ export type ScoreResult = {
  * width units; y is normalized against height, so it is rescaled by height/width.
  * Comparing squared values avoids a sqrt and keeps the boundary exact.
  */
-export function squaredDistanceInWidthUnits(a: NormalizedPoint, b: NormalizedPoint, image: ImageSize): number {
+function squaredDistanceInWidthUnits(a: NormalizedPoint, b: NormalizedPoint, image: ImageSize): number {
   const dx = a.x - b.x;
   const dy = (a.y - b.y) * (image.height / image.width);
   return dx * dx + dy * dy;
-}
-
-/** A marker hits an object when its centre is within (inclusive) the object's radius. */
-export function isHit(marker: NormalizedPoint, object: NormalizedCircle, image: ImageSize): boolean {
-  return squaredDistanceInWidthUnits(marker, object, image) <= object.radius * object.radius;
 }
 
 type Candidate = {
@@ -55,6 +50,7 @@ export function scoreAttempt({ markers, objects, image }: ScoreInput): ScoreResu
   markers.forEach((marker, markerIndex) => {
     objects.forEach((object, objectIndex) => {
       const distanceSq = squaredDistanceInWidthUnits(marker, object, image);
+      // A hit is inclusive: a centre exactly on the radius counts.
       if (distanceSq <= object.radius * object.radius) {
         candidates.push({ markerIndex, objectIndex, distanceSq });
       }
