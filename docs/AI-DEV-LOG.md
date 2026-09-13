@@ -212,10 +212,10 @@ type check, tests with coverage, secret scanning, dependency audit, code duplica
 security scan, and unused code — and posts one comment on the PR showing each check's
 previous value, current value, and delta.
 
-The numbers are a ratchet. `quality-baseline.json` holds the last known values; a PR fails
-if any metric gets worse, and a green merge to `main` rewrites the baseline with the new
-values. Quality can only move one way. The pattern was lifted from an earlier project of
-the author's and adapted from pnpm and Biome to npm and ESLint.
+The numbers are a ratchet: a PR fails if any metric gets worse, and a green merge to
+`main` rewrites the baseline. Quality can only move one way. Mechanism in SYSTEM.md §5.4.
+The pattern was lifted from an earlier project of the author's and adapted from pnpm and
+Biome to npm and ESLint.
 
 Setting the baseline meant getting to zero first, and the unused-code check found four
 things on its first run. `@next/env` was imported directly by `drizzle.config.ts` but only
@@ -234,6 +234,18 @@ conflicts. CI runs `npm ci` strictly and refused the lockfile. A local `npm ci` 
 because it read the same lenient config. Regenerated the lockfile with peers respected
 and added a project `.npmrc` so a local install can never again differ from CI.
 
+A third, quieter problem: the workflow was copied with a filter that ran it only on pull
+requests targeting `main`. The CI branch was stacked on the Phase 0 branch, so its own PR
+would never have been checked. Filter removed; every pull request is gated regardless of
+base.
+
+With those fixed, the gate went green on the CI PR, then on the Phase 0 PR once the two
+were merged together, and finally on the first push to `main` — where the
+`update-baseline` job made its first commit without a human touching it, raising the
+coverage floor from the hand-set 81 to the measured 81.81. The reporter comment on the
+Phase 0 PR read every row as ✅ with the coverage delta shown as +0.8. That is the loop
+closing: the numbers the gate enforces are the numbers the gate measured.
+
 Coverage is measured over `src/**/*.ts` only. Pages under `src/app` are UI, verified by
 Playwright, and would drag the number without saying anything about correctness. First
 baseline: 81% lines, everything else at zero. The E2E job is still missing — SPEC §8 calls
@@ -249,13 +261,22 @@ it would have replaced the `users` table with Better Auth's own tables inside th
 contract, and Clerk's shared dev credentials make Google sign-in zero-setup. The schema is
 unchanged — image columns hold keys or URLs either way. SPEC §5.1 updated.
 
+With a real connection string in hand, the initial migration was applied to the Neon dev
+branch with `drizzle-kit migrate` rather than `db:push`, so the migration history is
+recorded from the first table onward. Checked directly against the database afterwards:
+six tables, fifteen `CHECK` constraints, one migration row, and an insert with `ends_at`
+before `starts_at` rejected by `games_window_ordered`. `db:migrate` was added as a script
+and CLAUDE.md now points at it over `db:push`.
+
 ### Where this leaves us
 
-`npm run verify` is green: type check, lint, and 39 unit tests across scoring, types, and
-invariants. The contract files — `src/db/schema.ts` and `src/lib/types.ts` — are frozen
-for the three streams. Two things were deliberately left to Stream A: the database client
-(the HTTP driver cannot run the transaction that publication requires) and the function
-that derives a game's status from its timestamps.
+Phase 0 is merged to `main` as PR #1, with the CI gate (PR #2) folded in. `main` is green
+on all eight checks, the baseline is machine-written, and the schema is live on the Neon
+dev branch. The contract files — `src/db/schema.ts` and `src/lib/types.ts` — are frozen for
+the three streams. Two things were deliberately left to Stream A: the database client (the
+HTTP driver cannot run the transaction that publication requires) and the function that
+derives a game's status from its timestamps. Still owed from the Phase 0 list in SPEC §7:
+seed fixtures, the Playwright skeleton and its CI job, and the deterministic paste fallback.
 
 ---
 
@@ -291,4 +312,5 @@ Mirrors the table in SYSTEM.md §7. Each row started as a correction given twice
 | 2026-09-13 | Tests must run on the same Node everywhere | `.tool-versions`, `.nvmrc`, `engines` in `package.json` |
 | 2026-09-13 | Float boundary tests need binary-exact values | Comment in `scoring.test.ts`; squared-distance compare in `scoring.ts` |
 | 2026-09-13 | Lockfile must resolve the way CI resolves it | Project `.npmrc` with `legacy-peer-deps=false` |
+| 2026-09-13 | Quality must not regress between sessions | CI ratchet: `quality-baseline.json` + `update-baseline` job |
 | 2026-09-13 | File-write hooks are bypassed by shell writes | *Open.* Guard should also match `Bash` and inspect the command for protected paths |
