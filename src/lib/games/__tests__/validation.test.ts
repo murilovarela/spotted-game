@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isUuid,
   publishPreconditions,
   validateLabel,
   validateMarkerCount,
@@ -79,5 +80,16 @@ describe("validateMarkerCount", () => {
     expect(validateMarkerCount(3, 3)).toEqual({ ok: true, data: null });
     expect(validateMarkerCount(2, 3)).toMatchObject({ error: "WRONG_MARKER_COUNT" });
     expect(validateMarkerCount(4, 3)).toMatchObject({ error: "WRONG_MARKER_COUNT" });
+  });
+});
+
+describe("isUuid", () => {
+  it("accepts a valid v4 uuid, case-insensitively", () => {
+    expect(isUuid("11111111-1111-4111-8111-111111111111")).toBe(true);
+    expect(isUuid("11111111-1111-4111-8111-111111111111".toUpperCase())).toBe(true);
+  });
+  it("rejects a 35-char string and an empty string", () => {
+    expect(isUuid("11111111-1111-4111-8111-11111111111")).toBe(false);
+    expect(isUuid("")).toBe(false);
   });
 });

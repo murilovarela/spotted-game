@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isAllowedImageType, objectKey } from "../storage";
+import { isAllowedImageType, isAssetKind, objectKey } from "../storage";
 
 describe("objectKey", () => {
   it("namespaces by game and kind and picks the extension from the content type", () => {
@@ -18,5 +18,14 @@ describe("isAllowedImageType", () => {
     expect(isAllowedImageType("image/png")).toBe(true);
     expect(isAllowedImageType("image/gif")).toBe(false);
     expect(isAllowedImageType("text/html")).toBe(false);
+  });
+});
+
+describe("isAssetKind", () => {
+  it("allows background and object only", () => {
+    expect(isAssetKind("background")).toBe(true);
+    expect(isAssetKind("object")).toBe(true);
+    expect(isAssetKind("backgrounds")).toBe(false);
+    expect(isAssetKind("")).toBe(false);
   });
 });

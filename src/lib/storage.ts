@@ -10,10 +10,16 @@ export const BUCKET = "assets"; // declared in neon.ts, private
 
 const ALLOWED = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" } as const;
 export type AllowedImageType = keyof typeof ALLOWED;
-export type AssetKind = "background" | "object";
+
+export const ASSET_KINDS = ["background", "object"] as const;
+export type AssetKind = (typeof ASSET_KINDS)[number];
 
 export function isAllowedImageType(ct: string): ct is AllowedImageType {
   return ct in ALLOWED;
+}
+
+export function isAssetKind(s: string): s is AssetKind {
+  return (ASSET_KINDS as readonly string[]).includes(s);
 }
 
 export function objectKey(kind: AssetKind, gameId: string, contentType: string): string {
