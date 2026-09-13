@@ -42,7 +42,7 @@ These are correctness-critical. Violating one is a bug even if tests pass.
 | `npm run test:e2e` | Playwright |
 | `npm run eval:generation` | Generation quality against the golden set |
 | `npm run db:generate` | Generate a migration from schema changes |
-| `npm run db:push` | Apply schema to the database |
+| `npm run db:migrate` | Apply tracked migrations. Use this; `db:push` skips migration history |
 | `npm run seed` | Demo games in all four lifecycle states |
 
 ## Protected paths
