@@ -114,6 +114,16 @@ export type FinishedGameView = GameViewBase & {
   readonly objects: readonly ObjectReveal[];
 };
 
+/** One generation attempt as the master sees it: enough to know what failed and what was tried next. */
+export type GenerationRunView = {
+  readonly attemptNumber: number;
+  readonly status: GenerationRunStatus;
+  readonly failureReason: string | null;
+  readonly adjustment: string | null;
+  readonly startedAt: Date;
+  readonly finishedAt: Date | null;
+};
+
 export type MasterGameView = GameViewBase & {
   readonly viewer: "master";
   readonly status: GameStatus;
@@ -123,7 +133,35 @@ export type MasterGameView = GameViewBase & {
   readonly image: GameImage | null;
   readonly publishedAt: Date | null;
   readonly objects: readonly ObjectForMaster[];
+  readonly generationRuns: readonly GenerationRunView[];
 };
 
 export type PlayerGameView = ActiveGameView | FinishedGameView;
 export type GameView = PlayerGameView | MasterGameView;
+
+// ---------------------------------------------------------------------------
+// Attempts and leaderboard (SPEC §3.3.6–7, §3.4). These are the *only* shapes a
+// player's own attempt may take on the wire. Per-marker hit/miss stays server-side.
+// ---------------------------------------------------------------------------
+
+/** What a player learns after submitting: how many, how fast. Never which ones. */
+export type AttemptResult = {
+  readonly foundCount: number;
+  readonly elapsedMs: number;
+};
+
+export type PlayerAttemptState =
+  | { readonly kind: "not_started" }
+  /** `startedAt` is the server's timestamp; the client renders a timer from it and never reports its own. */
+  | { readonly kind: "in_progress"; readonly startedAt: Date }
+  | { readonly kind: "submitted"; readonly result: AttemptResult };
+
+/** Ranked by foundCount desc, then elapsedMs asc. Names, scores, times — never coordinates. */
+export type LeaderboardEntry = {
+  readonly rank: number;
+  readonly userName: string;
+  readonly foundCount: number;
+  readonly elapsedMs: number;
+  /** True on the viewing player's own row. */
+  readonly isViewer: boolean;
+};

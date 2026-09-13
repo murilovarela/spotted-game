@@ -268,14 +268,64 @@ six tables, fifteen `CHECK` constraints, one migration row, and an insert with `
 before `starts_at` rejected by `games_window_ordered`. `db:migrate` was added as a script
 and CLAUDE.md now points at it over `db:push`.
 
+### The review that stopped the freeze
+
+Before handing off, an `integration-reviewer` agent — fresh context, never saw the
+reasoning above — was pointed at the merged Phase 0 and asked whether the contract could
+be frozen. Its answer: the pure code is sound; the contract is not ready. Four findings
+rated HIGH, all accepted.
+
+**The CI gate failed open.** Every metric job ran its tool with errors suppressed, parsed
+the output with a fallback of zero, and compared with a shell test that treats an empty
+string as "not greater than". A crashed linter, a semgrep install failure, or a registry
+outage would report zero findings, pass, and — on `main` — write that zero into the
+baseline permanently. The ratchet would have ratcheted the wrong way with no one noticing.
+Fixed by moving the comparison into one script, `.github/scripts/gate.sh`, that refuses
+any value that is not a number. Seven cases were run by hand before trusting it: pass,
+regression, empty, garbage, missing baseline key. The reviewer also noticed that a PR
+compared against the baseline at its own branch point, not `main`'s current one, so a
+stale branch could pass while regressing against today's `main`. Now every PR reads
+`main`'s baseline — unless the PR edits `quality-baseline.json` itself, which is the one
+sanctioned way to lower a bar on purpose, and it shows in the diff.
+
+**The invariant test tested a fixture, not the invariant.** `projectGame` took `status`
+and `viewer` as inputs, so the two decisions that actually determine whether coordinates
+go out — is this the master, and is the game over yet — lived outside the choke point and
+outside the test. A caller passing the wrong viewer, or a status derivation with a `≥`
+where a `>` belonged, would leak everything with the test green. `projectGame` now takes
+a user id and a clock and decides both itself; `deriveStatus` moved into Phase 0 with
+tests at every boundary; the invariant test now drives real times through `ends_at − 1ms`
+and `ends_at`, and a user id that merely resembles the master's.
+
+**"Rejected at the database level" was only true for Start.** The attempt row is created
+when the player presses Start, so Submit is an update, and the unique index the spec
+relies on rejects a second Start, not a second Submit. Chosen fix, over a separate
+submissions table: Submit is a conditional update — `WHERE submitted_at IS NULL` — and a
+row count of zero is the rejection. Probed against the live database: first submit
+updates one row, second updates none, the score stands. While in there, `elapsed_ms`
+became a column the database computes from its own two timestamps; a client value
+cannot reach it because the column cannot be written at all. Invariant 5 by construction.
+
+**Three streams would have invented the same types.** Nothing described a player's
+attempt, a result, a leaderboard row, or a generation run as the master sees it. Added
+now, and the result type is deliberately just count and time — the per-marker assignment
+that scoring produces is the exact information SPEC §3.3.7 says a result must not reveal.
+
+Four smaller changes from the same review: images are stored as bucket keys and signed
+inside `projectGame`, so no read path can skip signing; `requested_scale` joined
+`objects` because the validation predicate in SPEC §5.3 needs a number to compare; a
+`CHECK` now forbids publishing without a generated image; and confirmation is defined as
+"against the current image" — any regeneration resets it, and publish re-checks. Coverage
+was rescoped to the pure core, `src/lib/**` minus the stream directories, because the
+first server action would have breached a floor measured on three pure files.
+
 ### Where this leaves us
 
-Phase 0 is merged to `main` as PR #1, with the CI gate (PR #2) folded in. `main` is green
-on all eight checks, the baseline is machine-written, and the schema is live on the Neon
-dev branch. The contract files — `src/db/schema.ts` and `src/lib/types.ts` — are frozen for
-the three streams. Two things were deliberately left to Stream A: the database client (the
-HTTP driver cannot run the transaction that publication requires) and the function that
-derives a game's status from its timestamps. Still owed from the Phase 0 list in SPEC §7:
+Phase 0 is merged to `main` as PR #1 with the CI gate (PR #2) folded in, and the review
+fixes follow as their own PR. `main` is green on all eight checks and the schema is live
+on the Neon dev branch. The handoff note is `docs/handoffs/phase-0.md`. The contract files — `src/db/schema.ts` and `src/lib/types.ts` — are frozen for
+the three streams. Left to Stream A: the database client (the HTTP driver cannot run the
+transaction that publication requires) and the URL signer. Still owed from the Phase 0 list in SPEC §7:
 seed fixtures, the Playwright skeleton and its CI job, and the deterministic paste fallback.
 
 ---
@@ -312,5 +362,7 @@ Mirrors the table in SYSTEM.md §7. Each row started as a correction given twice
 | 2026-09-13 | Tests must run on the same Node everywhere | `.tool-versions`, `.nvmrc`, `engines` in `package.json` |
 | 2026-09-13 | Float boundary tests need binary-exact values | Comment in `scoring.test.ts`; squared-distance compare in `scoring.ts` |
 | 2026-09-13 | Lockfile must resolve the way CI resolves it | Project `.npmrc` with `legacy-peer-deps=false` |
+| 2026-09-13 | A crashed tool is not a passing check | `gate.sh` rejects non-numeric metrics |
+| 2026-09-13 | The choke point must decide, not be told | `projectGame` takes `userId` + `now`, derives the rest |
 | 2026-09-13 | Quality must not regress between sessions | CI ratchet: `quality-baseline.json` + `update-baseline` job |
 | 2026-09-13 | File-write hooks are bypassed by shell writes | *Open.* Guard should also match `Bash` and inspect the command for protected paths |

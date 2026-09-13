@@ -43,7 +43,9 @@ type Candidate = {
  * Every (marker, object) pair within the object's radius is a candidate. Candidates are
  * taken closest-first; each marker and each object is consumed at most once. Because
  * only hits are candidates, a near miss never blocks another marker from scoring, and
- * because the ordering is global, the result does not depend on marker placement order.
+ * because the ordering is global, the result does not depend on marker placement order —
+ * except on an exact distance tie, where the lower marker index wins. Measure-zero with
+ * doubles; noted so nobody "fixes" it into something order-dependent for real.
  */
 export function scoreAttempt({ markers, objects, image }: ScoreInput): ScoreResult {
   const candidates: Candidate[] = [];
