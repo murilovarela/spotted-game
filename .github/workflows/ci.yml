@@ -226,6 +226,24 @@ jobs:
         env:
           URL: ${{ secrets.TEST_DATABASE_URL }}
         run: echo "present=$([ -n "$URL" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - name: Check database connectivity
+        if: steps.db.outputs.present == 'true'
+        env:
+          TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+          DATABASE_URL_UNPOOLED: ${{ secrets.TEST_DATABASE_URL_UNPOOLED }}
+        shell: bash
+        run: |
+          # drizzle-kit swallows connection errors behind its spinner; surface them here.
+          node --input-type=module -e '
+            import { neon } from "@neondatabase/serverless";
+            for (const name of ["TEST_DATABASE_URL", "DATABASE_URL_UNPOOLED"]) {
+              const url = process.env[name] ?? "";
+              const shape = url.replace(/:[^:@/]+@/, ":***@");
+              if (!/^postgres(ql)?:\/\//.test(url)) { console.error(`::error::${name} does not look like a postgres URL (starts with ${JSON.stringify(url.slice(0, 12))}); check for stray quotes`); process.exit(1); }
+              try { const [r] = await neon(url)`select current_database() as db, version() as v`; console.log(`${name}: ok (${shape}) ${r.db}`); }
+              catch (e) { console.error(`::error::${name} (${shape}): ${e.message}`); process.exit(1); }
+            }
+          '
       - name: Migrate the CI branch
         if: steps.db.outputs.present == 'true'
         env:
