@@ -1,7 +1,6 @@
 [allowlist]
-  description = "Documentation and test fixtures may contain example values"
+  description = "Test fixtures and the env template hold example values, never real ones"
   paths = [
-    '''docs/.*''',
     '''.*\.test\.ts$''',
     '''\.env\.example$''',
   ]

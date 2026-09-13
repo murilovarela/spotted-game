@@ -17,25 +17,22 @@ jobs:
       status: ${{ steps.run.outputs.status }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - run: .github/scripts/baseline.sh
       - id: run
         shell: bash
         run: |
-          set +e
-          npx eslint . -f json > /tmp/eslint.json 2>/dev/null
-          violations=$(jq '[.[] | .errorCount + .warningCount] | add // 0' /tmp/eslint.json 2>/dev/null || echo "0")
-          echo "violations=$violations" >> $GITHUB_OUTPUT
-          baseline=$(jq '.lintViolations' quality-baseline.json)
-          if [ "$violations" -gt "$baseline" ]; then
-            echo "status=fail" >> $GITHUB_OUTPUT
-            npx eslint . --max-warnings=0 || true
-            exit 1
-          fi
-          echo "status=pass" >> $GITHUB_OUTPUT
+          # ESLint exits 1 when it finds violations; that is a metric, not a crash.
+          npx eslint . -f json > /tmp/eslint.json || true
+          violations=$(jq '[.[] | .errorCount + .warningCount] | add // 0' /tmp/eslint.json 2>/dev/null || true)
+          npx eslint . --max-warnings=0 || true
+          .github/scripts/gate.sh violations "$violations" lintViolations lower
 
   typecheck:
     name: Type Check
@@ -44,6 +41,8 @@ jobs:
       status: ${{ steps.run.outputs.status }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
@@ -67,24 +66,20 @@ jobs:
       status: ${{ steps.run.outputs.status }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - run: .github/scripts/baseline.sh
       - id: run
         shell: bash
         run: |
           npm run test:cov
-          coverage=$(jq '.total.lines.pct' coverage/coverage-summary.json 2>/dev/null || echo "0")
-          echo "coverage=$coverage" >> $GITHUB_OUTPUT
-          baseline=$(jq '.coverage' quality-baseline.json)
-          if (( $(echo "$coverage < $baseline" | bc -l) )); then
-            echo "status=fail" >> $GITHUB_OUTPUT
-            echo "Coverage ${coverage}% is below baseline ${baseline}%"
-            exit 1
-          fi
-          echo "status=pass" >> $GITHUB_OUTPUT
+          coverage=$(jq '.total.lines.pct' coverage/coverage-summary.json 2>/dev/null || true)
+          .github/scripts/gate.sh coverage "$coverage" coverage higher
 
   secrets:
     name: Secrets Scan (gitleaks)
@@ -116,25 +111,22 @@ jobs:
       status: ${{ steps.run.outputs.status }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - run: .github/scripts/baseline.sh
       - id: run
         shell: bash
         run: |
-          set +e
-          npm audit --json > audit-output.json 2>/dev/null
-          high=$(jq '(.metadata.vulnerabilities.high // 0) + (.metadata.vulnerabilities.critical // 0)' audit-output.json 2>/dev/null || echo "0")
-          echo "high=$high" >> $GITHUB_OUTPUT
-          baseline=$(jq '.auditHigh' quality-baseline.json)
-          if [ "$high" -gt "$baseline" ]; then
-            echo "status=fail" >> $GITHUB_OUTPUT
-            npm audit --audit-level=high || true
-            exit 1
-          fi
-          echo "status=pass" >> $GITHUB_OUTPUT
+          # npm audit exits 1 when it finds anything; that is a metric, not a crash.
+          npm audit --json > audit-output.json || true
+          high=$(jq '(.metadata.vulnerabilities.high // 0) + (.metadata.vulnerabilities.critical // 0)' audit-output.json 2>/dev/null || true)
+          npm audit --audit-level=high || true
+          .github/scripts/gate.sh high "$high" auditHigh lower
 
   duplication:
     name: Code Duplication (jscpd)
@@ -144,26 +136,22 @@ jobs:
       status: ${{ steps.run.outputs.status }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - run: .github/scripts/baseline.sh
       - id: run
         shell: bash
         run: |
           mkdir -p report
-          npx jscpd src/ --reporters=json --output=report/ 2>/dev/null || true
-          pct=$(jq '.statistics.total.percentage // 0' report/jscpd-report.json 2>/dev/null || echo "0")
-          echo "pct=$pct" >> $GITHUB_OUTPUT
-          baseline=$(jq '.duplication' quality-baseline.json)
-          if (( $(echo "$pct > $baseline" | bc -l) )); then
-            echo "status=fail" >> $GITHUB_OUTPUT
-            echo "Duplication ${pct}% exceeds baseline ${baseline}%"
-            npx jscpd src/ --reporters=console || true
-            exit 1
-          fi
-          echo "status=pass" >> $GITHUB_OUTPUT
+          # jscpd exits 1 above its own threshold; that is a metric, not a crash.
+          npx jscpd src/ --reporters=json,console --output=report/ || true
+          pct=$(jq '.statistics.total.percentage // 0' report/jscpd-report.json 2>/dev/null || true)
+          .github/scripts/gate.sh pct "$pct" duplication lower
 
   security:
     name: Security Scan (semgrep)
@@ -173,21 +161,18 @@ jobs:
       status: ${{ steps.run.outputs.status }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - run: pip install semgrep
+      - run: .github/scripts/baseline.sh
       - id: run
         shell: bash
         run: |
-          set +e
-          semgrep scan --config=p/security-audit src/ --json > semgrep-results.json 2>/dev/null
-          errors=$(jq '[.results[] | select(.extra.severity == "ERROR")] | length' semgrep-results.json 2>/dev/null || echo "0")
-          echo "errors=$errors" >> $GITHUB_OUTPUT
-          baseline=$(jq '.securityErrors' quality-baseline.json)
-          if [ "$errors" -gt "$baseline" ]; then
-            echo "status=fail" >> $GITHUB_OUTPUT
-            jq -r '.results[] | select(.extra.severity == "ERROR") | "\(.path):\(.start.line) — \(.extra.message)"' semgrep-results.json
-            exit 1
-          fi
-          echo "status=pass" >> $GITHUB_OUTPUT
+          # A semgrep crash (install failure, bad config) must not read as zero findings.
+          semgrep scan --config=p/security-audit src/ --json > semgrep-results.json
+          errors=$(jq '[.results[] | select(.extra.severity == "ERROR")] | length' semgrep-results.json 2>/dev/null || true)
+          jq -r '.results[] | select(.extra.severity == "ERROR") | "\(.path):\(.start.line) — \(.extra.message)"' semgrep-results.json || true
+          .github/scripts/gate.sh errors "$errors" securityErrors lower
 
   unused:
     name: Unused Code (knip)
@@ -197,16 +182,19 @@ jobs:
       status: ${{ steps.run.outputs.status }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - run: .github/scripts/baseline.sh
       - id: run
         shell: bash
         run: |
-          set +e
-          npx knip --reporter=json > knip-output.json 2>/dev/null
+          # knip exits 1 when it finds issues; that is a metric, not a crash.
+          npx knip --reporter=json > knip-output.json || true
           count=$(jq '
             [.issues[] |
               (.files | length) + (.exports | length) + (.types | length) +
@@ -214,15 +202,9 @@ jobs:
               (.unlisted | length) + (.unresolved | length) + (.duplicates | length) +
               (.enumMembers | length) + (.namespaceMembers | length) + (.binaries | length)
             ] | add // 0
-          ' knip-output.json 2>/dev/null || echo "0")
-          echo "count=$count" >> $GITHUB_OUTPUT
-          baseline=$(jq '.unusedExports' quality-baseline.json)
-          if [ "$count" -gt "$baseline" ]; then
-            echo "status=fail" >> $GITHUB_OUTPUT
-            npx knip || true
-            exit 1
-          fi
-          echo "status=pass" >> $GITHUB_OUTPUT
+          ' knip-output.json 2>/dev/null || true)
+          npx knip || true
+          .github/scripts/gate.sh count "$count" unusedExports lower
 
   report:
     name: Quality Report
@@ -234,6 +216,9 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: .github/scripts/baseline.sh
       - uses: actions/github-script@v7
         env:
           LINT_STATUS: ${{ needs.lint.outputs.status }}
@@ -253,7 +238,7 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const baseline = JSON.parse(fs.readFileSync('quality-baseline.json', 'utf8'));
+            const baseline = JSON.parse(fs.readFileSync(process.env.BASELINE_FILE, 'utf8'));
 
             const icon = s => {
               if (s === 'pass' || s === 'success') return '✅';
