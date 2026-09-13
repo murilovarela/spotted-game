@@ -1,0 +1,58 @@
+/** Pure input and precondition checks. No I/O. */
+import { MAX_OBJECTS_PER_GAME, MIN_OBJECTS_PER_GAME } from "@/lib/types";
+import { fail, ok, type ActionResult } from "./result";
+
+const bounded = (value: string, min: number, max: number, what: string): ActionResult<string> => {
+  const s = value.trim();
+  if (s.length < min || s.length > max) {
+    return fail("INVALID_INPUT", `${what} must be ${min}–${max} characters`);
+  }
+  return ok(s);
+};
+
+export const validateTitle = (s: string) => bounded(s, 1, 120, "Title");
+export const validateLabel = (s: string) => bounded(s, 1, 60, "Label");
+export const validatePrompt = (s: string) => bounded(s, 0, 500, "Prompt");
+
+const isValidDate = (d: Date) => Number.isFinite(d.getTime());
+
+export function validateWindow(
+  startsAt: Date,
+  endsAt: Date,
+  now: Date,
+): ActionResult<{ startsAt: Date; endsAt: Date }> {
+  if (!isValidDate(startsAt) || !isValidDate(endsAt)) return fail("INVALID_WINDOW", "Start and end must be valid dates");
+  if (endsAt.getTime() <= startsAt.getTime()) return fail("INVALID_WINDOW", "End must be after start");
+  if (startsAt.getTime() < now.getTime()) return fail("INVALID_WINDOW", "Start cannot be in the past");
+  return ok({ startsAt, endsAt });
+}
+
+export type PublishGameSource = {
+  readonly publishedAt: Date | null;
+  readonly generatedImageKey: string | null;
+  readonly startsAt: Date | null;
+  readonly endsAt: Date | null;
+};
+export type PublishObjectSource = { readonly confirmed: boolean };
+
+/** Invariant 4 lives here and is re-checked inside the publish transaction. */
+export function publishPreconditions(
+  game: PublishGameSource,
+  objects: readonly PublishObjectSource[],
+): ActionResult<null> {
+  if (game.publishedAt !== null) return fail("NOT_DRAFT", "Game is already published");
+  if (objects.length < MIN_OBJECTS_PER_GAME) return fail("NO_OBJECTS", "Add at least one object");
+  if (objects.length > MAX_OBJECTS_PER_GAME) return fail("TOO_MANY_OBJECTS", `At most ${MAX_OBJECTS_PER_GAME} objects`);
+  if (game.generatedImageKey === null) return fail("NO_IMAGE", "Generate the image first");
+  const unconfirmed = objects.filter((o) => !o.confirmed).length;
+  if (unconfirmed > 0) return fail("UNCONFIRMED_OBJECTS", `${unconfirmed} object(s) not confirmed`);
+  if (game.startsAt === null || game.endsAt === null) return fail("INVALID_WINDOW", "Set the start and end");
+  return ok(null);
+}
+
+export function validateMarkerCount(markerCount: number, objectCount: number): ActionResult<null> {
+  if (markerCount !== objectCount) {
+    return fail("WRONG_MARKER_COUNT", `Place exactly ${objectCount} marker(s); you placed ${markerCount}`);
+  }
+  return ok(null);
+}
