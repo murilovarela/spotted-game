@@ -15,7 +15,8 @@
     "test:cov": "vitest run --coverage",
     "lint:unused": "knip",
     "lint:dup": "jscpd src/",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1131.0",
