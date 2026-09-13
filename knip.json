@@ -1,0 +1,6 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": ["src/lib/types.ts", "neon.ts", ".claude/hooks/*.mjs"],
+  "project": ["src/**/*.{ts,tsx,css}", ".claude/hooks/*.mjs"],
+  "ignoreDependencies": ["nanoid", "@neon/env"]
+}
