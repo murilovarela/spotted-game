@@ -17,6 +17,8 @@
     "lint:dup": "jscpd src/"
   },
   "dependencies": {
+    "@neon/config": "^1.4.2",
+    "@neon/env": "^1.3.2",
     "@neondatabase/serverless": "^1.1.0",
     "drizzle-orm": "^0.45.2",
     "nanoid": "^6.0.1",

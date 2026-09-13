@@ -47,3 +47,4 @@ next-env.d.ts
 # ci artifacts
 coverage/
 report/
+.neon

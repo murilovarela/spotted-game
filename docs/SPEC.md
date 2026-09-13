@@ -113,7 +113,7 @@ scores, and times only — never coordinates.
 | Hosting | Vercel | Zero-config preview deploys give the agent a verifiable artifact |
 | Auth | Clerk (free tier), Google only | Removes session handling from scope entirely |
 | Database | Neon Postgres + Drizzle | Typed schema is the shared contract between workstreams |
-| Blob storage | Vercel Blob | Same vendor as host; signed URLs for unpublished assets |
+| Blob storage | Neon Object Storage (S3-compatible) | Same vendor as the database; buckets branch with the project; signed URLs for unpublished assets |
 | Generation | Nano Banana (Gemini image) | Strongest subject-consistency when compositing a supplied object |
 | Detection | Gemini vision, constrained by pixel diff | See §5.3 |
 

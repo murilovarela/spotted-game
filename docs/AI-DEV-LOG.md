@@ -239,6 +239,16 @@ Playwright, and would drag the number without saying anything about correctness.
 baseline: 81% lines, everything else at zero. The E2E job is still missing — SPEC §8 calls
 for it and it lands with the Playwright skeleton.
 
+### Storage vendor change
+
+Vercel Blob was replaced by Neon Object Storage before any upload code existed. `npx neon
+init` was run with only Object Storage selected; it wrote `neon.ts` declaring one private
+bucket, `assets`, and pulled the connection strings and S3 credentials into `.env.local`.
+The CLI also offered Neon's managed Better Auth in place of Clerk. Considered and declined:
+it would have replaced the `users` table with Better Auth's own tables inside the frozen
+contract, and Clerk's shared dev credentials make Google sign-in zero-setup. The schema is
+unchanged — image columns hold keys or URLs either way. SPEC §5.1 updated.
+
 ### Where this leaves us
 
 `npm run verify` is green: type check, lint, and 39 unit tests across scoring, types, and
