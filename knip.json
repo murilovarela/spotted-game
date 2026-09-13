@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["src/lib/types.ts", "src/lib/visibility.ts", "neon.ts", ".claude/hooks/*.mjs"],
+  "entry": ["src/lib/types.ts", "src/lib/visibility.ts", "src/db/index.ts", "neon.ts", ".claude/hooks/*.mjs", "src/lib/games/result.ts", "src/lib/games/validation.ts", "src/lib/auth.ts", "src/lib/storage.ts", "src/lib/games/upload.ts", "src/lib/games/actions.ts"],
   "project": ["src/**/*.{ts,tsx,css}", ".claude/hooks/*.mjs"],
-  "ignoreDependencies": ["nanoid", "@neon/env"]
+  "ignoreDependencies": ["@neon/env"]
 }

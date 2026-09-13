@@ -145,6 +145,7 @@ full suite passing and on an `integration-reviewer` pass. Conflicts were confine
 | Invariant tests | `Stop` hook + CI | ~8s | Coordinate leakage, authorization |
 | Quality ratchet | CI, every PR | ~1min | Regression in coverage, lint, duplication, unused code, audit, security — §5.4 |
 | E2E (Playwright) | CI + on demand | ~60s | Full authoring and play flows |
+| Integration (Vitest + Neon branch) | CI | ~30s | Publish transaction, double-submit, timing, leaderboard visibility |
 | Generation eval | On demand | ~3min | Pipeline quality against a golden set |
 
 ### 5.2 The Stop hook — the core of the system

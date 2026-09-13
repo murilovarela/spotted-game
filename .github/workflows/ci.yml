@@ -206,10 +206,70 @@ jobs:
           npx knip || true
           .github/scripts/gate.sh count "$count" unusedExports lower
 
+  integration:
+    name: Integration (Neon)
+    runs-on: ubuntu-latest
+    concurrency:
+      group: integration-neon
+      cancel-in-progress: false
+    outputs:
+      status: ${{ steps.run.outputs.status || steps.skip.outputs.status }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - id: db
+        shell: bash
+        env:
+          URL: ${{ secrets.TEST_DATABASE_URL }}
+        run: echo "present=$([ -n "$URL" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - name: Check database connectivity
+        if: steps.db.outputs.present == 'true'
+        env:
+          TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+          DATABASE_URL_UNPOOLED: ${{ secrets.TEST_DATABASE_URL_UNPOOLED }}
+        shell: bash
+        run: |
+          # drizzle-kit swallows connection errors behind its spinner; surface them here.
+          node --input-type=module -e '
+            import { neon } from "@neondatabase/serverless";
+            for (const name of ["TEST_DATABASE_URL", "DATABASE_URL_UNPOOLED"]) {
+              const url = process.env[name] ?? "";
+              const shape = url.replace(/:[^:@/]+@/, ":***@");
+              if (!/^postgres(ql)?:\/\//.test(url)) { console.error(`::error::${name} does not look like a postgres URL (starts with ${JSON.stringify(url.slice(0, 12))}); check for stray quotes`); process.exit(1); }
+              try { const [r] = await neon(url)`select current_database() as db, version() as v`; console.log(`${name}: ok (${shape}) ${r.db}`); }
+              catch (e) { console.error(`::error::${name} (${shape}): ${e.message}`); process.exit(1); }
+            }
+          '
+      - name: Migrate the CI branch
+        if: steps.db.outputs.present == 'true'
+        env:
+          DATABASE_URL_UNPOOLED: ${{ secrets.TEST_DATABASE_URL_UNPOOLED }}
+        run: npx drizzle-kit migrate
+      - name: Run integration tests
+        id: run
+        if: steps.db.outputs.present == 'true'
+        shell: bash
+        env:
+          TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+        run: |
+          npm run test:integration
+          echo "status=pass" >> "$GITHUB_OUTPUT"
+      - name: No secret configured
+        id: skip
+        if: steps.db.outputs.present == 'false'
+        shell: bash
+        run: |
+          echo "::warning::TEST_DATABASE_URL secret not set; integration tests skipped"
+          echo "status=skipped" >> "$GITHUB_OUTPUT"
+
   report:
     name: Quality Report
     runs-on: ubuntu-latest
-    needs: [lint, typecheck, test, secrets, audit, duplication, security, unused]
+    needs: [lint, typecheck, test, secrets, audit, duplication, security, unused, integration]
     if: always() && github.event_name == 'pull_request'
     permissions:
       contents: read
@@ -235,6 +295,7 @@ jobs:
           SECURITY_ERRORS: ${{ needs.security.outputs.errors }}
           UNUSED_STATUS: ${{ needs.unused.outputs.status }}
           UNUSED_COUNT: ${{ needs.unused.outputs.count }}
+          INTEGRATION_STATUS: ${{ needs.integration.outputs.status }}
         with:
           script: |
             const fs = require('fs');
@@ -269,6 +330,7 @@ jobs:
               { name: 'duplication', status: process.env.DUPLICATION_STATUS, prev: baseline.duplication,    curr: process.env.DUPLICATION_PCT,   unit: '%',          lower: true  },
               { name: 'security',    status: process.env.SECURITY_STATUS,    prev: baseline.securityErrors, curr: process.env.SECURITY_ERRORS,   unit: 'errors',     lower: true  },
               { name: 'unused',      status: process.env.UNUSED_STATUS,      prev: baseline.unusedExports,  curr: process.env.UNUSED_COUNT,      unit: 'issues',     lower: true  },
+              { name: 'integration', status: process.env.INTEGRATION_STATUS === 'pass' ? 'pass' : process.env.INTEGRATION_STATUS === 'skipped' ? 'skipped' : 'fail', prev: null, curr: null, unit: null },
             ];
 
             const rows = checks.map(c =>
@@ -310,7 +372,7 @@ jobs:
   update-baseline:
     name: Update Quality Baseline
     runs-on: ubuntu-latest
-    needs: [lint, typecheck, test, secrets, audit, duplication, security, unused]
+    needs: [lint, typecheck, test, secrets, audit, duplication, security, unused, integration]
     if: >-
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
@@ -321,7 +383,8 @@ jobs:
       needs.audit.result == 'success' &&
       needs.duplication.result == 'success' &&
       needs.security.result == 'success' &&
-      needs.unused.result == 'success'
+      needs.unused.result == 'success' &&
+      needs.integration.outputs.status == 'pass'
     permissions:
       contents: write
     steps:
