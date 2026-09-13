@@ -143,6 +143,7 @@ full suite passing and on an `integration-reviewer` pass. Conflicts were confine
 | Path guard | `PreToolUse` hook, every Edit/Write | instant | Writes to protected paths |
 | Unit tests (Vitest) | `Stop` hook + CI | ~5s | Scoring, status derivation, validation predicate |
 | Invariant tests | `Stop` hook + CI | ~8s | Coordinate leakage, authorization |
+| Quality ratchet | CI, every PR | ~1min | Regression in coverage, lint, duplication, unused code, audit, security — §5.4 |
 | E2E (Playwright) | CI + on demand | ~60s | Full authoring and play flows |
 | Generation eval | On demand | ~3min | Pipeline quality against a golden set |
 
@@ -178,6 +179,39 @@ handoff, not a failure.
 
 Each of these began as something stated in a prompt. Each was moved into the environment
 after being needed twice.
+
+### 5.4 The quality ratchet
+
+The Stop hook guards one session; the ratchet guards `main` across sessions. Eight jobs
+run in parallel on every pull request (`.github/workflows/ci.yml`):
+
+| Job | Tool | Metric compared |
+| --- | --- | --- |
+| lint | ESLint | errors + warnings |
+| typecheck | tsc | pass/fail |
+| test | Vitest + v8 coverage | line coverage % |
+| secrets | gitleaks | pass/fail |
+| audit | npm audit | high + critical |
+| duplication | jscpd | % duplicated lines |
+| security | semgrep `p/security-audit` | ERROR findings |
+| unused | knip | unused files, exports, types, deps |
+
+Each numeric job reads its floor (or ceiling) from `quality-baseline.json` and fails if
+the current value is worse. A `report` job posts one comment per PR with previous, current,
+and delta per check, updated in place on every push. After a fully green run on `main`,
+`update-baseline` rewrites the file with the measured values and commits it as
+`github-actions[bot]` — so the baseline is never hand-set after the first commit, and
+never drifts from what the gate actually measured.
+
+Why a ratchet rather than fixed thresholds: a fixed threshold is a number someone picked
+once and everyone argues with later. A ratchet only asks that things do not get worse
+than they were, which is a rule nobody needs to negotiate. The cost is that a deliberate
+drop (removing dead code that was covered, say) needs a human to edit the baseline in the
+same PR — which is the right amount of friction for that decision.
+
+Reproducibility guards that came out of the first CI runs: `.nvmrc` / `.tool-versions`
+pin Node, `engines` enforces it, and a project `.npmrc` sets `legacy-peer-deps=false` so
+a local install resolves exactly as `npm ci` does in CI.
 
 ---
 
@@ -227,6 +261,9 @@ The running answer to *"am I telling the agent this again, or can I fix the syst
 | "Don't edit generated migrations" | `PreToolUse` guard |
 | "Check the status derivation, don't store it" | Unit test over all four states |
 | "Return findings, not file contents" | `scout` agent output contract |
+| "It works on my machine" (Node version) | `.nvmrc`, `.tool-versions`, `engines` |
+| "npm ci fails in CI but not locally" | Project `.npmrc` pinning `legacy-peer-deps=false` |
+| "Don't let coverage / lint / dead code slide" | CI quality ratchet, §5.4 |
 
 ---
 
