@@ -7,6 +7,13 @@ import type { GenerationRunView } from "@/lib/types";
 
 const POLL_MS = 3000;
 
+/** What the master can do about a failure: prompts fix model failures, not config or runtime ones. */
+function nextStep(reason: string): string {
+  if (reason.startsWith("config:")) return "Check the server configuration (GEMINI_API_KEY / GENERATION_MODE).";
+  if (reason.startsWith("error:") || reason.startsWith("stale")) return "Try again; if it keeps failing, check the server logs.";
+  return "Edit the prompts above and generate again.";
+}
+
 /** SPEC §3.1.4–5: generate, watch the loop, read why it failed. Positions are confirmed on the canvas above. */
 export function GenerationPanel({
   gameId,
@@ -62,7 +69,7 @@ export function GenerationPanel({
         <p role="alert" className="rounded bg-amber-50 p-2 text-sm text-amber-900">
           {state.reason}
           <br />
-          Edit the prompts above and generate again.
+          {nextStep(state.reason)}
         </p>
       )}
       {error && (
