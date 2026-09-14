@@ -58,6 +58,11 @@ export function presignGet(key: string): Promise<string> {
   return getSignedUrl(s3(), new GetObjectCommand({ Bucket: BUCKET, Key: key }), { expiresIn: 3600 });
 }
 
+/** Server-side upload (seed, generation). The app itself never proxies bytes — browsers use `presignPut`. */
+export async function putObject(key: string, contentType: string, body: Uint8Array): Promise<void> {
+  await s3().send(new PutObjectCommand({ Bucket: BUCKET, Key: key, ContentType: contentType, Body: body }));
+}
+
 /** Presign a set of keys up front so a synchronous `resolveUrl` can be given to `projectGame`. */
 export async function urlResolverFor(keys: readonly (string | null)[]): Promise<(key: string) => string> {
   const unique = [...new Set(keys.filter((k): k is string => k !== null))];

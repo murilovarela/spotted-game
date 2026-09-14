@@ -1,0 +1,8 @@
+{
+  "image": { "width": 1024, "height": 768 },
+  "objects": [
+    { "label": "Red ball", "file": "object-1.png", "shape": "circle", "color": [220, 50, 47], "x": 0.25, "y": 0.3, "radius": 0.06 },
+    { "label": "Green box", "file": "object-2.png", "shape": "square", "color": [60, 160, 70], "x": 0.62, "y": 0.55, "radius": 0.06 },
+    { "label": "Blue kite", "file": "object-3.png", "shape": "triangle", "color": [40, 90, 220], "x": 0.8, "y": 0.2, "radius": 0.06 }
+  ]
+}
