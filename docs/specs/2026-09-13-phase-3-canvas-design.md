@@ -91,14 +91,15 @@ When `view.image` is non-null, `AuthorCanvas` (client) renders above the object 
 select row → click canvas → same action at radius `0.05`. Row Confirm/Remove stay as
 server-action forms. Numeric readout stays as a caption.
 
-## Seed (`db/seed/`)
+## Seed (`src/db/seed/`)
 
 `npm run seed` (tsx). Uses `DATABASE_URL` and storage credentials. Idempotent: deletes
 games titled `[seed] …` first. Creates, owned by `SEED_MASTER_ID ?? "seed-master"`
-(users row upserted): draft (image + 3 objects, one unconfirmed), scheduled (+1d),
-active (−1h → +1d), finished (−2d → −1h, three fake attempts by `seed-player-{1,2,3}`);
-plus one **active** game owned by `seed-opponent` so the master account can play.
-Fixtures in `db/seed/fixtures/`: `background.png` (1024×768), `object-{1,2,3}.png`,
+(users row inserted if missing): draft (image + 3 objects, one unconfirmed, window set,
+unpublished), scheduled (+1d), active (−1h → +1d), finished (−2d → −1h, three attempts by
+`seed-player-{1,2,3}`); plus scheduled/active/finished games owned by `seed-opponent` so
+the master account can be a player (404 check, play, reveal). `--json` prints the ids.
+Fixtures in `src/db/seed/fixtures/`: `background.png` (1024×768), `object-{1,2,3}.png`,
 `generated.png` (background with the three objects pasted; committed, made once).
 Uploads via the S3 client to `games/<id>/{background,object,generated}/…`; positions go
 through `setGeneratedImage` + `confirmObject` so lock discipline holds.
@@ -108,10 +109,10 @@ through `setGeneratedImage` + `confirmObject` so lock discipline holds.
 - Auth via **Clerk sign-in tokens** (ticket strategy): works with a Google-only sign-in
   configuration and needs no dashboard changes. `global-setup.ts`: (1) resolve the test
   user — `E2E_CLERK_USER_ID` if set, else find-or-create `e2e@spotted.test` via
-  `clerkClient.users`; (2) run the seed with `SEED_MASTER_ID=<id>`; (3) mint a token with
-  `clerkClient.signInTokens.createSignInToken({ userId, expiresInSeconds: 300 })`, open
-  the app with `setupClerkTestingToken`, sign in with `Clerk.signIn.create({ strategy:
-  "ticket", ticket })` + `setActive`, save `storageState`.
+  `clerkClient.users`; (2) run the seed with `SEED_MASTER_ID=<id>`; (3) `clerkSetup()` +
+  `setupClerkTestingToken`, then `clerk.signIn({ page, emailAddress })` from
+  `@clerk/testing/playwright` — it mints a sign-in token via the Backend API and signs in
+  with the ticket strategy — and save `storageState`.
 - `webServer`: `npm run build && npm run start` (CI) / reuse dev server locally.
 - Specs: `play.spec.ts` (start → markers add/drag/trash → submit gated → confirm → result
   → leaderboard; **network assertion**: no response before Start contains `generated/`;
