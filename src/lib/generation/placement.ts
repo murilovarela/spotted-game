@@ -6,7 +6,11 @@ import type { Box } from "./types";
 
 export type PlaceableObject = { readonly id: string; readonly requestedScale: number | null; /** sprite height / width */ readonly aspect: number };
 export type PlacementOptions = { readonly margin: number; readonly gap: number; readonly maxTries: number };
-const PLACEMENT_DEFAULTS: PlacementOptions = { margin: 0.1, gap: 0.02, maxTries: 500 };
+// `gap` must exceed the diff's `mergeGap` (0.02) plus its dilation by a clear margin: two
+// pasted objects closer than that are merged into one candidate region, and validation then
+// reports both as a 100% overlap (seen in CI on a seed that placed them ~2% apart).
+export const PLACEMENT_GAP = 0.06;
+const PLACEMENT_DEFAULTS: PlacementOptions = { margin: 0.1, gap: PLACEMENT_GAP, maxTries: 500 };
 
 /** mulberry32 seeded from an FNV-1a hash of the string. */
 export function seededRandom(seed: string): () => number {

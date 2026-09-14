@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { overlapFraction } from "../boxes";
-import { placeObjects, seededRandom } from "../placement";
+import { DIFF_DEFAULTS } from "../diff";
+import { PLACEMENT_GAP, placeObjects, seededRandom } from "../placement";
 
 const image = { width: 1024, height: 768 };
 const five = Array.from({ length: 5 }, (_, i) => ({ id: `o${i}`, requestedScale: null, aspect: 1 }));
@@ -28,6 +29,17 @@ describe("placeObjects", () => {
       expect(b.y + b.h).toBeLessThanOrEqual(0.9);
     }
     for (let i = 0; i < 5; i++) for (let j = i + 1; j < 5; j++) expect(overlapFraction(boxes[i], boxes[j])).toBe(0);
+  });
+  it("keeps every pair clear of the diff's merge gap, across many seeds", () => {
+    // Objects closer than the diff's mergeGap become one candidate region → a 100% overlap
+    // failure. The placement gap must dominate it regardless of the seed.
+    expect(PLACEMENT_GAP).toBeGreaterThanOrEqual(2 * DIFF_DEFAULTS.mergeGap);
+    const gapOf = (a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) =>
+      Math.max(Math.max(a.x, b.x) - Math.min(a.x + a.w, b.x + b.w), Math.max(a.y, b.y) - Math.min(a.y + a.h, b.y + b.h));
+    for (let s = 0; s < 200; s++) {
+      const boxes = placeObjects(five.slice(0, 3), image, `seed-${s}`);
+      for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) expect(gapOf(boxes[i], boxes[j])).toBeGreaterThanOrEqual(PLACEMENT_GAP - 1e-9);
+    }
   });
   it("sizes each box from requestedScale (or 0.12) as a fraction of width, aspect-aware", () => {
     const [b] = placeObjects([{ id: "a", requestedScale: 0.2, aspect: 2 }], image, "s"); // aspect = height/width of the sprite

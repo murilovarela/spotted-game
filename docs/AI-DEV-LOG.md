@@ -528,6 +528,15 @@ visible in the evidence table as `adjustment: null`, but still a paid, blind ret
 whole-branch review called it against the image-pipeline rule ("a blind retry is not a
 recovery loop"); the loop now stops the moment an attempt adds nothing new.
 
+The first CI run of the pull request failed the paste-mode E2E with "failed after 2
+attempts" while the same spec passed locally. The `generation_runs` rows on the CI branch
+said why: one candidate region, both objects labelled into it, `overlap … by 100%` twice,
+then the stop rule. Paste placement kept objects 2 % apart — exactly the diff's merge gap —
+so on the seed that game id produced, the diff merged the two pasted objects into one
+region. Locally a different game id had drawn a luckier layout. The placement gap is now
+0.06 with a 200-seed test that asserts every pair stays clear of the merge gap; the diff
+was right, the fixture was wrong.
+
 The golden-set eval first scored 4/5: on the cluttered desk, one merged noise box
 swallowed three objects. Re-tuning the diff (threshold 60, one dilation) took it to 5/5,
 every case on the first attempt — with the SPEC thresholds untouched and the rationale
