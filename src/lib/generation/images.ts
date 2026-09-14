@@ -46,6 +46,14 @@ export function diffScale(size: ImageSize, max = DIFF_MAX_SIDE): ImageSize {
   return { width: Math.max(1, Math.round(size.width * f)), height: Math.max(1, Math.round(size.height * f)) };
 }
 
+/** Longest side ≤ `maxSide`, aspect preserved; the input bytes come back untouched when already within it. */
+export async function downscale(png: Uint8Array, maxSide: number): Promise<Uint8Array> {
+  const size = await dimensions(png);
+  if (Math.max(size.width, size.height) <= maxSide) return png;
+  const buf = await sharp(png).resize(maxSide, maxSide, { fit: "inside", withoutEnlargement: true }).png().toBuffer();
+  return new Uint8Array(buf);
+}
+
 /** Resize (stretch to exactly `size`) and decode. Used to bring background and output onto one grid. */
 export async function toRGBAAt(png: Uint8Array, size: ImageSize): Promise<Uint8Array> {
   const buf = await sharp(png).resize(size.width, size.height, { fit: "fill" }).ensureAlpha().raw().toBuffer();

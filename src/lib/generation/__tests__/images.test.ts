@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import sharp from "sharp";
-import { dimensions, encodePng, mimeOf, toPng } from "../images";
+import { dimensions, downscale, encodePng, mimeOf, toPng } from "../images";
 
 describe("mimeOf", () => {
   it("recognises PNG, JPEG and WebP by magic bytes and rejects the rest", async () => {
@@ -28,5 +28,19 @@ describe("toPng", () => {
       expect(mimeOf(out)).toBe("image/png");
       expect(await dimensions(out)).toEqual({ width: 4, height: 4 });
     }
+  });
+});
+
+describe("downscale", () => {
+  it("returns the same bytes when the longest side is within the cap", async () => {
+    const png = await encodePng(new Uint8Array(8 * 4 * 4).fill(90), { width: 8, height: 4 });
+    expect(await downscale(png, 8)).toBe(png);
+    expect(await downscale(png, 512)).toBe(png);
+  });
+  it("shrinks a 2000×1000 PNG to 1536×768, aspect preserved, still PNG", async () => {
+    const png = new Uint8Array(await sharp({ create: { width: 2000, height: 1000, channels: 4, background: { r: 10, g: 20, b: 30, alpha: 1 } } }).png().toBuffer());
+    const out = await downscale(png, 1536);
+    expect(mimeOf(out)).toBe("image/png");
+    expect(await dimensions(out)).toEqual({ width: 1536, height: 768 });
   });
 });
