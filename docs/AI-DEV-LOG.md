@@ -458,6 +458,128 @@ not break are the first section in it.
 
 ---
 
+## Phase 3 — Canvas stream
+
+Branch `stream/canvas`, 25 commits, one session. Plan: `docs/plans/2026-09-13-phase-3-canvas.md`;
+design: `docs/specs/2026-09-13-phase-3-canvas-design.md`; handoff: `docs/handoffs/phase-3.md`.
+
+### What we set out to do
+
+Build the part of the game a player actually touches: the canvas where markers are placed,
+the page at `/g/<publicId>` that runs a play from Start to a scored result, and the
+drag-to-confirm step on the master's edit page. Alongside it, pay the harness debt left
+from Phase 0: a seed that puts a game in every lifecycle state, a Playwright suite, and a CI
+job that runs it.
+
+### What we decided and why
+
+Phase 2 (image generation) and Phase 3 could have run in parallel. We chose Phase 3 first
+because the canvas is what the master uses to confirm generated positions, so Phase 2's
+output would have had nowhere to land; and the Playwright suite drives this surface, so
+building it here closed two debts at once. The deterministic paste fallback moved to
+Phase 2, whose directory it belongs to.
+
+The canvas is an SVG overlay drawn in the generated image's own pixel space, stacked on
+the `<img>` and scaled with it. The alternatives were positioned `<div>`s or an HTML
+`<canvas>`. SVG won because a hit radius is a fraction of image *width* (the Phase 0
+decision), which in pixel space is a plain circle — so what the master sees is exactly the
+geometry `src/lib/scoring.ts` tests, and every marker is a real DOM element Playwright and
+the keyboard can reach. All coordinate maths lives in `src/components/canvas/geometry.ts`,
+pure and unit-tested; the component is an event-to-callback shell.
+
+The Start screen cannot receive the image. `StartScreen`'s prop type has no image field,
+and `page.tsx` builds its props from scratch rather than spreading the view. That turns
+the "image before Start" rule from a discipline into a type error — and the E2E suite
+checks it on the wire, not in the DOM.
+
+Playwright signs in without a password or a Google login: Clerk's dev instance is
+Google-only, so `@clerk/testing` mints a sign-in token through the Backend API and
+signs in with it. Global setup finds the test user, runs the seed as that user, saves the
+session, and the specs read the seeded ids from a JSON file. No dashboard changes.
+
+The seed drives the Phase 1 core functions — `createGame`, `setGeneratedImage`,
+`confirmObject`, `publishGame`, `startAttempt`, `submitAttempt` — with a shifted `now`,
+rather than inserting rows. Every seeded game therefore passed the same validation and
+locks the app uses. Fixtures are five PNGs generated once by a 60-line Node script, no
+image library.
+
+Execution used the same subagent-driven loop as Phase 1: eight tasks, a fresh implementer
+and a fresh reviewer per task, one whole-branch review at the end. Cheap models did the
+transcription tasks; the Playwright task and the final review ran on the strongest.
+
+### What broke
+
+The first `Timer` computed `Date.now()` inside `useSyncExternalStore`'s snapshot. React
+requires that snapshot to be cached and change only when the store notifies; a live value
+trips its consistency check and can re-render without limit. Unit tests could not see
+it. The task reviewer caught it by reading; the fix keeps the number in a store object
+created once per mount and updated only on the 100 ms tick.
+
+A plain click on a marker fired `onMove` with unchanged coordinates. Harmless in play
+mode, but in author mode a position write resets `confirmed`, so selecting an object
+would have un-confirmed it. Caught as a "minor" in the canvas review; ruled load-bearing
+and fixed at the source before the authoring task built on it.
+
+Two quick gestures on the same object could overwrite each other: the second read the
+first's not-yet-refreshed value from props. Fixed with a per-object cache of the last
+sent position — and the fix's first version then left a ghost marker whenever a save
+failed. The scoped re-review caught that; a failed send is now forgotten immediately.
+
+The Playwright run exposed two layout bugs no reviewer had seen: the play screens
+shrink-wrapped to 173 px until the image loaded, and the master page's background preview
+reloaded on every render because each presigned URL is different. The harness had been
+compensating with a `settled()` helper; the fix wave added `w-full`, reserved a box for
+the preview, and dropped a redundant `router.refresh()` that rendered the page twice.
+
+The whole-branch review found that the leak test could pass vacuously — nothing proved the
+detector could fire at all — and that both error banners printed whatever text was in
+`?error=`. Redirects now carry only an `ActionError` code, mapped to fixed copy in
+`src/app/g/[publicId]/error-copy.ts`; the leak test runs its detector on both sides of
+Start and requires a hit afterwards.
+
+The fresh-context integration review at the phase boundary found the click guard had a
+hole: a plain click on the *resize handle* still fired `onResize`, because the handle
+drag started from the raw pointer position rather than the handle's centre. It also
+found that holding an arrow key in author mode issued a locked transaction per key
+repeat. Both were fixed in `src/components/canvas/marker-canvas.tsx` — drags that never
+moved do nothing, handle drags carry their grab offset, and keyboard nudges commit once on
+key-up — with one more E2E assertion for the handle click. The same review caught the
+seed writing `published_at` in the future for scheduled games (the shifted `now` was
+applied to every window, not only past ones) and the CI `e2e` job checking four of its
+eight secrets; both one-line fixes.
+
+The first CI run with real secrets failed the play spec twice, on assertions that had
+passed locally against `next dev`. In a production build, Next streams a server action's
+response and the browser discards the body the moment the router applies it, so
+Playwright's `response.text()` returned nothing — first silently (the leak detector's
+positive control "never fired"), then loudly (`No data found for resource`) on the submit
+response. The fixes: the positive control now gates on the image *request URL*, which the
+browser must send either way; and the submit response is intercepted with `page.route`,
+fetched in full by the test, and then handed to the page. The suite now runs against
+`next build && next start` locally with `CI=1` before it is pushed.
+
+Two subagents skipped the manual browser check because they had no signed-in session. The
+E2E suite, written next, became the first end-to-end run of the play surface — and passed
+on its second attempt after three selector fixes (`role="alert"` also matched Next's route
+announcer; "Confirm" also matched the "(unconfirmed)" chips).
+
+### What changed because of it
+
+Unit: 111 tests in 12 files, coverage 97.47 against a baseline of 96.77. E2E: 7 specs
+green against the dev server, including the master redirect, the signed-out Start screen,
+and the wire-level checks. jscpd 0, knip 0, lint 0. Three reviewer findings were parked
+with rulings (see the handoff's known gaps); every other Important finding was fixed in a
+review loop before the next task started.
+
+### Where this leaves us
+
+A second Google account can now open a seeded game, play it, and land on a leaderboard —
+the spec's definition of done for gameplay. What is still missing is the image itself:
+Phase 2 must produce `generated_image_key` and proposals for the master to drag. The canvas
+is waiting for them.
+
+---
+
 ## Autonomous loop evidence
 
 ### Loop 1 — Generation retry (product)

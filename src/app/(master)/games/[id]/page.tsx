@@ -5,6 +5,8 @@ import { addObjectAction, publishGameAction, setWindowAction, unpublishGameActio
 import { loadGameForMasterById } from "@/lib/games/queries";
 import { MAX_OBJECTS_PER_GAME } from "@/lib/types";
 import { AddObjectForm } from "./add-object-form";
+import { AuthorCanvas } from "./author-canvas";
+import { masterErrorCopy } from "./error-copy";
 import { ObjectRow } from "./object-row";
 import { redirectBack } from "./redirect-back";
 import { UploadField } from "./upload-field";
@@ -17,7 +19,8 @@ export default async function EditGamePage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ error?: string }>;
 }) {
-  const [{ id }, { error }] = await Promise.all([params, searchParams]);
+  const [{ id }, { error: errorCode }] = await Promise.all([params, searchParams]);
+  const error = masterErrorCopy(errorCode);
   const user = await getCurrentUser();
   if (!user) redirect("/sign-in");
   const game = await loadGameForMasterById(getDb(), id, user.id, new Date());
@@ -73,13 +76,23 @@ export default async function EditGamePage({
       <section>
         <h2 className="mb-2 font-medium">Background</h2>
         {game.backgroundUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={game.backgroundUrl} alt="" className="max-h-64 rounded" />
+          // Reserve the height up front so the page does not reflow when the (unsized) preview lands.
+          <div className="h-64">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={game.backgroundUrl} alt="" className="h-full w-auto rounded object-contain" />
+          </div>
         ) : (
           <p className="text-neutral-500">None yet.</p>
         )}
         {editable && <UploadField gameId={id} kind="background" label="Upload background" onUploaded={saveBackground} />}
       </section>
+
+      {game.image && (
+        <section>
+          <h2 className="mb-2 font-medium">Positions</h2>
+          <AuthorCanvas gameId={id} image={game.image} objects={game.objects} editable={editable} />
+        </section>
+      )}
 
       <section>
         <h2 className="mb-2 font-medium">
