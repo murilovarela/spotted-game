@@ -94,9 +94,9 @@ matching the server's draft-only rules. Errors keep the `?error=` code protocol;
     `confirm-submit-yes` kept.
   - Coarse pointers: `@media (pointer: coarse)` enlarges only the invisible hit circles
     of markers and handles in `marker-canvas.tsx`; positions and radii unchanged.
-- **Result**: score hero (found / total, elapsed), per-object hit/miss list, reveal
-  canvas (`mode="reveal"`), `Leaderboard` as `Table` with own row highlighted, "Play
-  another" → `/`.
+- **Result**: score hero (found / total, elapsed), the image shown bare — no markers, no
+  per-object hit/miss (SPEC §3.3.7 forbids any hint of where the misses were) —
+  `Leaderboard` as `Table` with own row highlighted, "Play another" → `/`.
 - **Finished** (window over): reveal canvas + leaderboard, no score hero.
 - `not-found.tsx` under `g/[publicId]`: "This game isn't open" + link home (draft,
   scheduled, unknown — same `notFound()` calls).
