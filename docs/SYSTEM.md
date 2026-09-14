@@ -111,25 +111,29 @@ non-deterministic. Stream C is verified by browser automation and screenshot com
 Three incompatible feedback loops is the actual argument for three streams — running them
 in one session would mean one slow suite gating three fast ones.
 
-### 4.3 Parallelization evidence
+### 4.3 What actually happened
 
-See `docs/evidence/parallel-timeline.md` and `docs/evidence/worktrees.png`.
+The three-worktree layout in §4.1 was never exercised. `docs/evidence/timeline.md` shows
+why: each stream's first commit follows the previous stream's merge commit by tens of
+minutes to a couple of hours, with no interleaving between streams' commit windows. That
+is one engineer running one orchestrating session per stream, in series, not three
+concurrent sessions in three worktrees.
 
-Reproduce it directly from git:
-
-```bash
-git log --all --format='%ad %d %s' --date=format:'%H:%M' --reverse
-```
-
-Interleaved commit timestamps across `stream/platform`, `stream/imagegen`, and
-`stream/canvas` are the evidence. They are a byproduct of the work rather than an artifact
-produced for the submission.
+The commit timestamps are the evidence — `docs/evidence/timeline.md` reproduces them
+directly from git (`git log --first-parent main --merges` for the merge order, then
+`git log <merge>^1..<merge>^2` per merge for that stream's own commits) and states the
+gaps. The reason three worktrees were not needed: the bottleneck was the review loop
+(brainstorm → spec → plan → subagent-per-task review → whole-branch review → fix wave →
+`integration-reviewer` → PR → CI), not parallel compute, and there was only one session
+to run it.
 
 ### 4.4 Integration
 
-Streams merged into `main` in dependency order (A, then B, then C), each merge gated on the
-full suite passing and on an `integration-reviewer` pass. Conflicts were confined to
-`package.json` by construction.
+Streams merged into `main` in the order they were actually run: A (platform), then C
+(canvas), then B (imagegen) — not the A, then B, then C order the plan anticipated. Each
+merge was gated on the full test suite passing and on a fresh-context `integration-reviewer`
+pass; a whole-branch review preceded that gate on each stream, before its PR was opened.
+Conflicts were confined to `package.json` by construction.
 
 ---
 
@@ -265,6 +269,7 @@ The running answer to *"am I telling the agent this again, or can I fix the syst
 | "It works on my machine" (Node version) | `.nvmrc`, `.tool-versions`, `engines` |
 | "npm ci fails in CI but not locally" | Project `.npmrc` pinning `legacy-peer-deps=false` |
 | "Don't let coverage / lint / dead code slide" | CI quality ratchet, §5.4 |
+| Parallel streams claimed, sequential streams delivered | Corrected in §4.3/§4.4 during Phase 4 |
 
 ---
 
