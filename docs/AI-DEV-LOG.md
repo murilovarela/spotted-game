@@ -458,6 +458,57 @@ not break are the first section in it.
 
 ---
 
+## Phase 3 — Canvas stream, final-review fix wave
+
+The full Phase 3 narrative belongs to the phase handoff. This entry records the last
+session on `stream/canvas`: one dispatch that applied every finding from the whole-branch
+review, in four commits (`105b2ba`, `cd4960d`, `645bddf`, `57fab58`).
+
+### What we set out to do
+
+Close seven review findings without touching the frozen contract or the Phase 1 core: a
+reflected-text problem in the error banners, two layout defects, a redundant second render
+on the authoring page, a leak test with no positive control, a handful of cheap E2E
+assertions, and lint housekeeping.
+
+### What we decided and why
+
+The one real security finding: the Start button and every edit-page action redirected
+back with the failure *message* in the URL (`?error=This game is not open for play`), and
+the page printed it inside the app's own red alert box. Anyone could share a link that
+made the app say whatever they typed. The options were to sanitise the text, to sign it, or
+to stop sending text at all. We chose the last: the redirect now carries only the
+`ActionError` code (`?error=NOT_ACTIVE`), and a pure module,
+`src/app/g/[publicId]/error-copy.ts`, turns a known code into fixed copy and returns
+nothing for anything else. The master page has its own table so its publish-blocked line
+still says "not confirmed", which `e2e/author.spec.ts` asserts.
+
+The authoring canvas called `router.refresh()` after every save even though
+`updateObjectAction` already revalidates the page, so each drag rendered the page twice.
+We removed the call and let the E2E suite decide: if the "unconfirmed" badge had stayed
+stale after a drag, the call would have gone back in. It did not — the drag, the badge
+flip, and the three-Confirm loop all passed on the first run without it.
+
+The leak test in `e2e/play.spec.ts` asserted that no response before Start mentioned the
+generated image, but nothing proved the detector could fire at all; a renamed key prefix
+would have passed it forever. It now runs the same detector on both sides of Start and
+requires at least one hit afterwards, on response bodies and on request URLs.
+
+### What broke
+
+Nothing in this wave. `git add -p` in a non-interactive shell staged only the first hunk
+of the master page when two were wanted; the fix was to split the diff by hunk with a
+short script and `git apply --cached` the one that belonged to the security commit.
+
+### What changed because of it
+
+Unit: 12 files, 111 tests, coverage 97.47 (baseline 96.77). E2E: 7 of 7 against the dev
+server and the Clerk dev instance, two of them new (the master of an active game is
+redirected to the edit page; a signed-out visitor sees "Sign in to start" and no canvas).
+jscpd 0 clones, knip 0 issues, lint 0.
+
+---
+
 ## Autonomous loop evidence
 
 ### Loop 1 — Generation retry (product)
