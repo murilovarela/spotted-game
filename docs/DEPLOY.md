@@ -30,23 +30,22 @@ scope, before the first deploy that needs them.
 | `GEMINI_VISION_MODEL` | Google AI Studio (e.g. `gemini-3.6-flash`) |
 | `GENERATION_MODE` | `gemini` (production calls the real backend, unlike CI's `paste`) |
 | `GENERATION_DAILY_CAP` | `20` |
-| `NEXT_PUBLIC_APP_URL` | `https://<project>.vercel.app` (the Vercel production URL) |
 
 `.env.example` documents the same variables for local development; this table maps each to
 its production source.
 
 ## 2. Bucket CORS
 
-The `assets` bucket only accepts browser requests (presigned PUT/GET) from origins in its
-`AllowedOrigins` list. Add the Vercel production origin:
-
-Neon dashboard → Storage → bucket `assets` → CORS → **AllowedOrigins** → add
-`https://<project>.vercel.app`.
-
-Without this step, uploads and image loads fail with a CORS error in the browser even
-though the presigned URL itself is valid.
+Nothing to do: the `assets` bucket is configured with `AllowedOrigins: ["*"]` (verified with
+`GetBucketCors` and a preflight from a `vercel.app` origin), so presigned PUT/GET work from
+any deployment origin. If that ever changes, the symptom is a CORS error in the browser on
+upload with a valid presigned URL.
 
 ## 3. Deploy (agent)
+
+Production domain: `https://spotted.murilovarela.dev` (attached to the project; the parent
+zone is on Vercel nameservers, so no DNS records are needed).
+
 
 ```bash
 npx vercel --prod
