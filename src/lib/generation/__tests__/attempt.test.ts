@@ -72,6 +72,19 @@ describe("attemptOnce", () => {
     expect(out.added).toEqual([]);
   });
 
+  it("never calls vision when the whole frame changed, and reports background_altered", async () => {
+    const g = await game();
+    // A frame that differs from the background everywhere: the model re-rendered the scene.
+    const composed = await scene({ x: 0, y: 0, w: SIZE.width, h: SIZE.height });
+    const backend = fake(composed, ({ candidates }) => candidates.map((_, i) => ({ candidate: i, objectId: "ball", confidence: 1 })));
+    const out = await attemptOnce(backend, g, []);
+    expect(backend.labelCalls).toBe(0);
+    expect(out.candidates.length).toBeGreaterThan(0);
+    expect(out.labels).toEqual([]);
+    expect(out.visionRaw).toBeNull();
+    expect(out.result).toEqual({ ok: false, failures: [{ objectId: null, class: "background_altered", detail: expect.stringContaining("re-rendered") }] });
+  });
+
   it("adds nothing on a repeated identical failure", async () => {
     const g = await game();
     const backend = fake(g.background, () => []);

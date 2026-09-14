@@ -3,8 +3,8 @@ import type { GenerationBackend } from "./backend";
 import { DIFF_DEFAULTS, diffRegions } from "./diff";
 import { cropPng, diffScale, toRGBAAt } from "./images";
 import { adjustmentFor, composePrompt, mergeAdjustments } from "./prompt";
-import type { Adjustment, Candidate, ComposeResult, GameInput, ValidationResult, VisionLabel } from "./types";
-import { validate } from "./validate";
+import { type Adjustment, type Candidate, type ComposeResult, type GameInput, MAX_CHANGED_FRACTION, type ValidationResult, type VisionLabel } from "./types";
+import { changedFraction, validate } from "./validate";
 
 export type AttemptOutcome = {
   readonly prompt: string;
@@ -27,9 +27,12 @@ export async function attemptOnce(backend: GenerationBackend, game: GameInput, a
   const [gen, bg] = await Promise.all([toRGBAAt(image.png, small), toRGBAAt(game.background, small)]);
   const candidates = diffRegions(bg, gen, small.width, small.height, { ...DIFF_DEFAULTS, maxCandidates: 2 * game.objects.length });
 
+  // Vision is only worth calling when there is something to label and the background survived:
+  // with nothing changed every object is `absent`, and with most of the frame changed `validate`
+  // reports `background_altered` regardless of what the labels would have said.
   let labels: readonly VisionLabel[] = [];
   let visionRaw: unknown = null;
-  if (candidates.length > 0) {
+  if (candidates.length > 0 && changedFraction(candidates) <= MAX_CHANGED_FRACTION) {
     const crops = await Promise.all(candidates.map((c) => cropPng(image.png, c, size)));
     ({ labels, raw: visionRaw } = await backend.label({ game, scene: image, candidates, crops }));
   }

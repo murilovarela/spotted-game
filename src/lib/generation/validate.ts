@@ -12,7 +12,7 @@ import { CONFIDENCE_THRESHOLD, FRAME_MARGIN, MAX_CHANGED_FRACTION, MAX_OVERLAP, 
 export type ValidatableObject = { readonly id: string; readonly label: string; readonly requestedScale: number | null };
 
 /** Fraction of the frame covered by candidates (boxes are already merged, so the sum is the cover). */
-function changedFraction(candidates: readonly Candidate[]): number {
+export function changedFraction(candidates: readonly Candidate[]): number {
   return candidates.reduce((sum, c) => sum + c.area, 0);
 }
 
