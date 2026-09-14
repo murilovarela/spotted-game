@@ -6,7 +6,8 @@
     "**/node_modules/**",
     "**/.next/**",
     "**/coverage/**",
-    "**/src/db/migrations/**"
+    "**/src/db/migrations/**",
+    "**/src/components/ui/**"
   ],
   "output": "report/"
 }
