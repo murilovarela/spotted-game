@@ -18,8 +18,9 @@ export function Leaderboard({ entries }: { entries: readonly LeaderboardEntry[] 
         </TableRow>
       </TableHeader>
       <TableBody>
-        {entries.map((e) => (
-          <TableRow key={`${e.rank}-${e.userName}`} data-viewer={e.isViewer || undefined} className={cn(e.isViewer && "bg-primary/10 font-medium")}>
+        {/* Index key: entries have no id and tied rank+userName can collide; the list is server-ordered and never reordered client-side. */}
+        {entries.map((e, i) => (
+          <TableRow key={i} data-viewer={e.isViewer || undefined} className={cn(e.isViewer && "bg-primary/10 font-medium")}>
             <TableCell className="tabular-nums">{e.rank === 1 ? <Trophy className="size-4 text-primary" aria-label="1" /> : e.rank}</TableCell>
             <TableCell>{e.userName}{e.isViewer && <span className="ml-2 text-xs text-muted-foreground">you</span>}</TableCell>
             <TableCell className="text-right tabular-nums">{e.foundCount}</TableCell>

@@ -26,12 +26,12 @@ export default async function GamesPage() {
         </Button>
       </div>
       {list.length === 0 ? (
-        <Card className="items-center py-12 text-center">
+        <Card className="py-12 text-center">
           <CardHeader>
             <CardTitle className="font-display text-xl">No games yet</CardTitle>
           </CardHeader>
-          <CardContent className="max-w-sm text-muted-foreground">Upload a background, add a few objects, and let the model hide them.</CardContent>
-          <CardFooter>
+          <CardContent className="mx-auto max-w-sm text-muted-foreground">Upload a background, add a few objects, and let the model hide them.</CardContent>
+          <CardFooter className="justify-center">
             <Button asChild>
               <Link href="/games/new">Make your first game</Link>
             </Button>

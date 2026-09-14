@@ -24,8 +24,8 @@ export function ResultScreen({
     <>
       <PlayerBar />
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-8">
-        <Card className="items-center text-center">
-          <CardHeader className="items-center">
+        <Card className="text-center">
+          <CardHeader>
             <CardDescription>{title}</CardDescription>
             <CardTitle className="font-display text-4xl font-extrabold">
               {result.foundCount === total ? "All of them!" : result.foundCount === 0 ? "None this time" : "Nice spotting"}
