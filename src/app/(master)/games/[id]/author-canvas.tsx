@@ -23,6 +23,9 @@ export function AuthorCanvas({ gameId, image, objects, editable }: { gameId: str
   // router.refresh() re-renders must build on what we just saved, not on the stale prop. This
   // is state, not a ref: the repo's lint config (react-hooks/refs) forbids reading a ref during
   // render, and the reconciliation below has to run during render to avoid a stale-forever cache.
+  // A failed send is forgotten immediately (see `save`) rather than left cached: the server
+  // geometry never changed, so waiting for the reconciliation loop below to match it would never
+  // happen and the marker would stay at the unsaved position forever.
   const [sent, setSent] = useState<ReadonlyMap<string, Position>>(new Map());
   // Adjust state during render (React's documented alternative to an effect for this): once the
   // objects prop actually changes identity, drop any cached entry the fresh props now agree
@@ -62,7 +65,15 @@ export function AuthorCanvas({ gameId, image, objects, editable }: { gameId: str
     start(async () => {
       setError(null);
       const r = await updateObjectAction(gameId, objectId, input);
-      if (!r.ok) setError(r.message);
+      if (!r.ok) {
+        setError(r.message);
+        setSent((m) => {
+          if (!m.has(objectId)) return m;
+          const next = new Map(m);
+          next.delete(objectId);
+          return next;
+        });
+      }
       router.refresh();
     });
   }
