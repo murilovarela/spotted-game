@@ -7,7 +7,7 @@
  */
 import { useRef, useState, type KeyboardEvent, type PointerEvent, type RefObject } from "react";
 import type { GameImage, Normalized, NormalizedPoint } from "@/lib/types";
-import { nudge, radiusFromHandle, radiusPx, toNormalized, toPixel, type Rect } from "./geometry";
+import { clamp01, nudge, radiusFromHandle, radiusPx, toNormalized, toPixel, type Rect } from "./geometry";
 
 type CanvasMode = "play" | "author" | "reveal";
 
@@ -37,7 +37,19 @@ type MarkerCanvasProps = {
   readonly trashRef?: RefObject<HTMLElement | null>;
 };
 
-type Drag = { readonly id: string; readonly kind: "center" | "handle"; readonly point: NormalizedPoint };
+type Drag = {
+  readonly id: string;
+  readonly kind: "center" | "handle";
+  readonly point: NormalizedPoint;
+  /** Whether a pointermove has fired since pointerdown; a click with no movement commits nothing. */
+  readonly moved: boolean;
+  /** Normalized offset (handle centre − pointerdown), added back on every move so a handle
+   *  grabbed off-centre doesn't snap the circle to the raw pointer position. Zero for "center" drags. */
+  readonly offset: { readonly dx: number; readonly dy: number };
+};
+
+/** A gesture's accumulated-but-uncommitted keyboard nudge (author mode only, one write per gesture). */
+type Nudging = { readonly id: string; readonly point: NormalizedPoint };
 
 const ARROWS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] } as const;
 const NO_RECT: Rect = { left: 0, top: 0, width: 0, height: 0 };
@@ -53,6 +65,7 @@ export function MarkerCanvas(props: MarkerCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [overTrash, setOverTrash] = useState(false);
+  const [nudging, setNudging] = useState<Nudging | null>(null);
   const readOnly = mode === "reveal";
   const dotR = image.width * 0.015;
   const stroke = Math.max(2, image.width * 0.003);
@@ -72,20 +85,34 @@ export function MarkerCanvas(props: MarkerCanvasProps) {
     if (!m) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     props.onSelect?.(id);
-    const start = kind === "center" ? { x: m.x, y: m.y } : (toNormalized(e.clientX, e.clientY, rect(), { clamp: true }) ?? { x: m.x, y: m.y });
-    setDrag({ id, kind, point: start });
+    const pointerDown = toNormalized(e.clientX, e.clientY, rect(), { clamp: true }) ?? { x: m.x, y: m.y };
+    if (kind === "handle" && m.radius !== undefined) {
+      // Handle centre per the SVG render: { x: m.x + radiusPx(m.radius, image) / image.width, y: m.y } = { x: m.x + m.radius, y: m.y }.
+      const handleCentre: NormalizedPoint = { x: clamp01(m.x + m.radius), y: m.y };
+      const offset = { dx: handleCentre.x - pointerDown.x, dy: handleCentre.y - pointerDown.y };
+      setDrag({ id, kind, point: pointerDown, moved: false, offset });
+      return;
+    }
+    setDrag({ id, kind: "center", point: { x: m.x, y: m.y }, moved: false, offset: { dx: 0, dy: 0 } });
   }
 
   function onPointerMove(e: PointerEvent<SVGElement>) {
     if (!drag) return;
     const p = toNormalized(e.clientX, e.clientY, rect(), { clamp: true });
     if (!p) return;
-    setDrag({ ...drag, point: p });
+    const point = drag.kind === "handle" ? { x: clamp01(p.x + drag.offset.dx), y: clamp01(p.y + drag.offset.dy) } : p;
+    setDrag({ ...drag, point, moved: true });
     if (mode === "play") setOverTrash(over(trashRef?.current, e.clientX, e.clientY));
   }
 
   function endDrag(e: PointerEvent<SVGElement>) {
     if (!drag) return;
+    // A click with no movement in between is not a gesture: nothing to commit, no callbacks.
+    if (!drag.moved) {
+      setDrag(null);
+      setOverTrash(false);
+      return;
+    }
     const m = find(drag.id);
     if (m) {
       if (drag.kind === "handle") {
@@ -112,13 +139,31 @@ export function MarkerCanvas(props: MarkerCanvasProps) {
     const d = ARROWS[e.key as keyof typeof ARROWS];
     if (d) {
       e.preventDefault();
-      props.onMove?.(m.id, nudge({ x: m.x, y: m.y }, d[0], d[1]));
+      if (mode === "author") {
+        // Accumulate locally across the held-key gesture; committed once on keyup/blur.
+        const base = nudging && nudging.id === m.id ? nudging.point : { x: m.x, y: m.y };
+        setNudging({ id: m.id, point: nudge(base, d[0], d[1]) });
+      } else {
+        props.onMove?.(m.id, nudge({ x: m.x, y: m.y }, d[0], d[1]));
+      }
       return;
     }
     if (mode === "play" && (e.key === "Delete" || e.key === "Backspace")) {
       e.preventDefault();
       props.onRemove?.(m.id);
     }
+  }
+
+  /** Commit an accumulated author-mode nudge once, on release of the key (or loss of focus). */
+  function commitNudge(m: CanvasMarker) {
+    if (mode !== "author" || !nudging || nudging.id !== m.id) return;
+    props.onMove?.(m.id, nudging.point);
+    setNudging(null);
+  }
+
+  function onKeyUp(e: KeyboardEvent<SVGGElement>, m: CanvasMarker) {
+    if (mode !== "author" || !(e.key in ARROWS)) return;
+    commitNudge(m);
   }
 
   return (
@@ -136,7 +181,8 @@ export function MarkerCanvas(props: MarkerCanvasProps) {
       >
         {markers.map((m) => {
           const dragging = drag?.id === m.id ? drag : null;
-          const center = dragging?.kind === "center" ? dragging.point : { x: m.x, y: m.y };
+          const nudgingThis = mode === "author" && nudging?.id === m.id ? nudging : null;
+          const center = dragging?.kind === "center" ? dragging.point : nudgingThis ? nudgingThis.point : { x: m.x, y: m.y };
           const radius = m.radius === undefined ? null : dragging?.kind === "handle" ? radiusFromHandle(center, dragging.point, image) : m.radius;
           const c = toPixel(center, image);
           const rPx = radius === null ? 0 : radiusPx(radius, image);
@@ -153,6 +199,8 @@ export function MarkerCanvas(props: MarkerCanvasProps) {
               className="outline-none focus-visible:[&>circle:last-of-type]:stroke-yellow-400"
               style={{ cursor: readOnly ? "default" : dragging ? "grabbing" : "grab" }}
               onKeyDown={(e) => onKeyDown(e, m)}
+              onKeyUp={(e) => onKeyUp(e, m)}
+              onBlur={() => commitNudge(m)}
               onPointerDown={(e) => startDrag(e, m.id, "center")}
               onPointerMove={onPointerMove}
               onPointerUp={endDrag}

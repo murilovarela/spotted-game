@@ -28,6 +28,17 @@ test("master positions by dragging, confirms, and publishes", async ({ page }) =
   await expect(page.getByText("Saving…")).toHaveCount(0);
   await expect(badge("unconfirmed")).toHaveCount(1);
 
+  // A radius-handle click that does not move it is the same zero-delta guard, handle kind:
+  // no resize callback, so a confirmed marker stays confirmed.
+  const handle = markers.nth(0).getByTestId("radius-handle");
+  const handleCentre = await centerOf(handle);
+  await page.mouse.move(handleCentre.x, handleCentre.y);
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  await expect(page.getByText("Saving…")).toHaveCount(0);
+  await expect(badge("unconfirmed")).toHaveCount(1);
+
   // Moving a confirmed object un-confirms it (Phase 1 rule, visible here).
   await drag(page, markers.nth(0), await within(canvas, 0.4, 0.4));
   await expect(badge("unconfirmed")).toHaveCount(2);
