@@ -173,6 +173,7 @@ where the model silently declined to place an object: no diff region, no candida
 
 | Failure | Adjustment |
 | --- | --- |
+| Background re-rendered (changed regions cover > 60% of the frame) | Instruct the model to edit the supplied image in place and change nothing but the added objects |
 | Object absent from diff | Restate that object's placement more explicitly, raise its prominence |
 | Low confidence | Reduce occlusion in the object's prompt |
 | Overlapping boxes | Add explicit separation instruction |

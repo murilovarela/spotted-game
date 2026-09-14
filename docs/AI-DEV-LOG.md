@@ -458,6 +458,146 @@ not break are the first section in it.
 
 ---
 
+## Phase 2 — Imagegen stream
+
+Branch `stream/imagegen`, 25 commits, one session, after Phase 3. Plan:
+`docs/plans/2026-09-14-phase-2-imagegen.md`; design:
+`docs/specs/2026-09-14-phase-2-imagegen-design.md`; handoff: `docs/handoffs/phase-2.md`.
+
+### What we set out to do
+
+Build the part of the product that is genuinely uncertain: ask an image model to blend
+the master's objects into their background, find where the objects ended up without
+trusting the model to tell us, check the result against fixed rules, and — when it fails —
+change the prompt in a specific way and try again, at most three times, with every attempt
+written to the `generation_runs` table. SPEC §5.3 fixed that shape before any code; this
+phase had to make it real and prove it with a golden-set evaluation.
+
+### What we decided and why
+
+The job runs inside Next's `after()` from a server action, with the page allowed 300
+seconds. The alternatives were a queue vendor or driving the loop step by step from the
+browser; the first buys durability we do not need, the second leaks the loop into HTTP.
+A run that outlives the function is not left hanging: a row older than ten minutes reads
+as `stale`, and the master is told to try again.
+
+The paste fallback is a full stand-in, not a shortcut. `GENERATION_MODE=paste` composites
+the objects deterministically and then runs the same diff → validate path the model
+output goes through. CI never calls Gemini, yet the end-to-end test still uploads a
+background and two objects, presses Generate, confirms the two circles and publishes —
+SPEC §8's "upload to published without touching a coordinate". A validation failure in
+paste mode is a pipeline bug, not a model quirk.
+
+Pixel-diff before vision, as the spec insists. The diff is pure code over RGBA buffers:
+threshold, dilate, connected components, merge, cap at twice the object count. Vision is
+asked one question — which object is in each of these crops — and can never "find"
+something that was already in the background.
+
+Two things the spec did not know. First, on our synthetic seed fixtures Nano Banana
+re-rendered the entire background, so the diff flagged the whole frame and the failure
+read as `out_of_bounds` with an adjustment that could not help. We added a
+`background_altered` class (changed regions over 60 % of the frame), its own "edit in
+place" instruction, and an output aspect-ratio request; the golden set was made from
+photographic scenes generated once with Gemini and committed. Second, the vision model id
+in the plan did not exist and its predecessor is retired for new keys; the default is now
+`gemini-3.6-flash`, overridable by env.
+
+Execution reused the Phase 1/3 loop: eight tasks, fresh implementer and reviewer per task,
+a whole-branch review, one fix wave. Two tasks — the Gemini adapter and the golden set —
+went to the `image-pipeline` agent so the main session never saw a prompt iteration or a
+base64 payload.
+
+### What broke
+
+An implementer added a `1e-9` epsilon to the overlap predicate to make a boundary test
+pass. The reviewer caught it: the test's decimal literals did not round cleanly, and the
+fix loosened SPEC's "≤ 20 %" for every caller. The epsilon went; the test uses dyadic
+boxes (`0.125`, `0.3125`) whose intersection is exactly `0.2` in IEEE 754 — the same rule
+the Phase 0 scoring tests follow.
+
+My own plan code undercounted the failed streak when the latest run was stale
+(`attempts: 1` regardless of what came before) — a reviewer caught it against the plan's
+own contract.
+
+The first real Gemini smoke found the MIME assumption: uploads may be JPEG or WebP, but
+every input was declared `image/png`. Bytes are now sniffed by magic number and outputs
+normalised to PNG.
+
+The loop as first written would retry with an unchanged prompt when a failure repeated —
+visible in the evidence table as `adjustment: null`, but still a paid, blind retry. The
+whole-branch review called it against the image-pipeline rule ("a blind retry is not a
+recovery loop"); the loop now stops the moment an attempt adds nothing new.
+
+The first CI run of the pull request failed the paste-mode E2E with "failed after 2
+attempts" while the same spec passed locally. The `generation_runs` rows on the CI branch
+said why: one candidate region, both objects labelled into it, `overlap … by 100%` twice,
+then the stop rule. Paste placement kept objects 2 % apart — exactly the diff's merge gap —
+so on the seed that game id produced, the diff merged the two pasted objects into one
+region. Locally a different game id had drawn a luckier layout. The placement gap is now
+0.06 with a 200-seed test that asserts every pair stays clear of the merge gap; the diff
+was right, the fixture was wrong.
+
+The golden-set eval first scored 4/5: on the cluttered desk, one merged noise box
+swallowed three objects. Re-tuning the diff (threshold 60, one dilation) took it to 5/5,
+every case on the first attempt — with the SPEC thresholds untouched and the rationale
+recorded on the constant.
+### The final-review fix wave, in detail
+
+
+The one decision with alternatives was the retry rule in `src/lib/generation/run.ts`. The
+loop already capped itself at 3 attempts, but a failure that added no new prompt adjustment
+would send the exact same prompt again. We considered keeping the cap as the only stop and
+relying on the adjustment table to always add something; we chose instead to stop the loop
+the moment an attempt adds nothing, append "no new adjustment; not retrying" to that row's
+reason, and keep the cap only for prompts that keep changing. The image-pipeline rule is
+"a blind retry is not a recovery loop", and a resent identical prompt is a blind retry.
+
+For the frame that differs everywhere from the background, `attemptOnce` now skips the
+vision call: `validate.ts` exports `changedFraction`, and `attempt.ts` only calls
+`backend.label` when it is at or below `MAX_CHANGED_FRACTION`. The validation result is the
+same `background_altered` failure as before; the model call it saves was pure waste.
+
+Inputs to the model are now bounded before they leave the server: `images.downscale`
+brings the background to at most 1536 and each object image to at most 512 on the long
+side. The diff still compares the generated image against the original background on one
+grid, so every coordinate stays normalized against the generated image.
+
+#### What broke in the wave
+
+Un-exporting `FAILURE_CLASSES` in `types.ts` so knip would stop reporting it made ESLint
+report it instead: "assigned a value but only used as a type". The array only ever served
+to derive the `FailureClass` union, so the array went and the union is written out
+directly. knip and ESLint are both clean.
+
+#### What the wave changed
+
+`diff.ts` shares one `forEachNeighbour` walk between `dilate` and `components`, which
+took the jscpd clone count from 1 to 0. The add-object form in
+`src/app/(master)/games/[id]/page.tsx` is keyed on the object count so it remounts after
+each add and no longer keeps the previous upload key; `e2e/generate.spec.ts` lost its
+"wait for the hidden key to change" workaround. The generation panel tells the master what
+to do next per failure class: prompts for model failures, server configuration for
+`config:`, logs for `error:` and `stale`. SPEC §5.3 gained the "background re-rendered"
+row and the design doc records the stop rule and the input bounds.
+
+Final numbers: 183 unit tests, coverage 99.04 % (baseline 98.03), 0 clones, knip clean,
+7 integration tests on the Neon branch, 8 Playwright tests in paste mode. No Gemini call
+was made.
+
+---
+
+
+### Where this leaves us
+
+The whole product loop now exists: a master uploads, generates, drags, confirms and
+publishes; a player finds. The autonomous loop is recorded in `generation_runs` (see
+"Loop 1" below) and the golden set passes 5/5. What Phase 4 inherits is integration
+polish: stable image URLs, the master-side leaderboard, deploy verification, and two
+pipeline findings from the evidence run — adjustments for one object can contradict each
+other, and a merged diff region still reads as "absent".
+
+---
+
 ## Phase 3 — Canvas stream
 
 Branch `stream/canvas`, 25 commits, one session. Plan: `docs/plans/2026-09-13-phase-3-canvas.md`;
@@ -584,13 +724,40 @@ is waiting for them.
 
 ### Loop 1 — Generation retry (product)
 
-<!--
-Fill from the generation_runs table once the pipeline runs. Include the prompt
-adjustment at each step, not just the pass/fail, so the recovery is legible.
-Query:
-  select attempt, status, failure_reason, duration_ms from generation_runs
-  where game_id = '<id>' order by attempt;
--->
+Recorded 14 September 2026 from a real run of `runGeneration` (Gemini backend) against
+the development database, game `31defdcf-7314-4fdd-ba0c-c25c3cc8093b` — the golden
+beach-towel scene with a Teddy bear asked to be 3 % of the image width and a Blue sneaker
+at 10 %. No human input between the steps; every row was written by the loop.
+
+| attempt | status | duration | failure_reason | adjustment added for the next prompt |
+| --- | --- | --- | --- | --- |
+| 1 | failed | 25.1 s | `absent: Teddy bear — no changed region was labelled as this object`; `scale: Blue sneaker — box area is 12.8× the requested scale` | "Place the Teddy bear exactly as described (sitting on the towel) and make it clearly visible and larger than before." / "The Blue sneaker should be roughly 10% of the image width — about the size of a prominent element of the scene." |
+| 2 | failed | 24.6 s | `scale: Teddy bear — box area is 159.6× the requested scale` | "The Teddy bear should be roughly 3% of the image width — about the size of a prominent element of the scene." |
+| 3 | failed | 30.3 s | `absent: Teddy bear …`; `absent: Blue sneaker …` | "Place the Blue sneaker exactly as described (on the sand beside the towel) and make it clearly visible and larger than before." — cap reached, game left untouched |
+
+What the frames show: attempt 1 drew the bear small on the towel, but the diff merged it
+with the sneaker and the re-lit towel into one region, so vision named the region "sneaker"
+and the bear read as absent. Attempt 2 recovered both attempt-1 failures — the bear was
+labelled at 0.99 and the sneaker landed inside its 10 % tolerance — but "larger than
+before" had produced a bear 45 % of the frame wide, 159× its 3 % target. Attempt 3, now
+carrying both "larger" and "3 %", drew the bear small again but against the beach bag; the
+diff merged bear, bag and sneaker, vision returned null at 0.90, and both objects read as
+absent. Three attempts in 82 seconds, each with a specific reason and a specific change.
+
+The same loop *with* a final pass was recorded by the golden-set eval on 14 September
+(run 1, case `beach-towel`, via the identical `attemptOnce` code path): attempt 1 `absent`
+for both objects → the two "clearly visible and larger" adjustments → attempt 2 passed
+with both objects at 0.99 and 0.98. After the diff re-tune every golden case passed on
+the first attempt (5/5), and two further real games on the dev database
+(`e358b279-b6a1-4a00-b439-b0bdd552345e`, `fb04460d-c14d-4006-bf9f-39bc64f0a759`) passed on
+attempt 1 as well, with every label at 0.99.
+
+What the run teaches: the loop mechanics are right (a row before every call, a reason on
+every failure, a changed prompt on every retry, a hard cap, the game untouched on
+failure), and two of the adjustments are not. Adjustments for one object accumulate and
+can contradict ("larger" and "3 %" both stayed in the prompt); and a merged diff region is
+reported as "absent" when the object is present but touching a neighbour. Both go to
+Phase 4 as pipeline improvements with a recorded case to test against.
 
 ### Loop 2 — Stop hook recovery (development)
 

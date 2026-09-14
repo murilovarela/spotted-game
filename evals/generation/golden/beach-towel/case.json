@@ -1,0 +1,18 @@
+{
+  "title": "Beach towel",
+  "generalPrompt": "A sunny beach with a towel on the sand, easy difficulty.",
+  "objects": [
+    {
+      "file": "objects/teddy.png",
+      "label": "Teddy bear",
+      "prompt": "sitting on the towel",
+      "requestedScale": 0.12
+    },
+    {
+      "file": "objects/sneaker.png",
+      "label": "Blue sneaker",
+      "prompt": "on the sand beside the towel",
+      "requestedScale": 0.1
+    }
+  ]
+}

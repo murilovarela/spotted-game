@@ -1,0 +1,18 @@
+{
+  "title": "Garage workshop",
+  "generalPrompt": "A garage workshop with a workbench, hard difficulty.",
+  "objects": [
+    {
+      "file": "objects/toy-car.png",
+      "label": "Toy car",
+      "prompt": "on the workbench",
+      "requestedScale": 0.1
+    },
+    {
+      "file": "objects/mug.png",
+      "label": "Coffee mug",
+      "prompt": "on a shelf",
+      "requestedScale": 0.08
+    }
+  ]
+}
