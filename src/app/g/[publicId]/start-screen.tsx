@@ -1,8 +1,14 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Hourglass } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { ObjectRail } from "@/components/canvas/object-rail";
+import { SubmitButton } from "@/components/shell/submit-button";
 import { startAttemptAction } from "@/lib/games/actions";
 import type { ObjectThumbnail } from "@/lib/types";
+import { PlayerBar } from "./player-bar";
 
 /**
  * Rendered before Start. By construction this tree never receives `image` — the prop type
@@ -30,33 +36,48 @@ export function StartScreen({
     redirect(`/g/${publicId}${r.ok ? "" : `?error=${r.error}`}`);
   }
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-6">
-      <h1 className="text-2xl font-semibold">{title}</h1>
-      {error && (
-        <p role="alert" className="rounded bg-red-50 p-2 text-red-700">
-          {error}
-        </p>
-      )}
-      <section>
-        <h2 className="mb-2 font-medium">Find these {objects.length} objects</h2>
-        <ObjectRail objects={objects} />
-      </section>
-      <section className="rounded border border-amber-300 bg-amber-50 p-4 text-sm">
-        <p className="font-medium">Before you start</p>
-        <ul className="mt-1 list-disc pl-5">
-          <li>The timer starts the moment you press Start and does not pause — not if you close the tab, not if you walk away.</li>
-          <li>You get one submission. An unsubmitted attempt never reaches the leaderboard.</li>
-        </ul>
-      </section>
-      {signedIn ? (
-        <form action={start}>
-          <button className="rounded bg-black px-5 py-3 text-lg text-white">Start</button>
-        </form>
-      ) : (
-        <Link href={`/sign-in?redirect_url=${encodeURIComponent(`/g/${publicId}`)}`} className="w-fit rounded bg-black px-5 py-3 text-lg text-white">
-          Sign in to start
-        </Link>
-      )}
-    </main>
+    <>
+      <PlayerBar />
+      <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-8">
+        <Card>
+          <CardHeader className="text-center">
+            <CardTitle className="font-display text-3xl font-bold">{title}</CardTitle>
+            <CardDescription>Find {objects.length} hidden object{objects.length === 1 ? "" : "s"} as fast as you can.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-6">
+            {error && (
+              <Alert variant="destructive" role="alert">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+            <section>
+              <h2 className="mb-2 text-sm font-medium text-muted-foreground">You are looking for</h2>
+              <ObjectRail objects={objects} />
+            </section>
+            <Alert>
+              <Hourglass aria-hidden />
+              <AlertTitle>Before you start</AlertTitle>
+              <AlertDescription>
+                <ul className="list-disc pl-4">
+                  <li>The timer starts the moment you press Start and does not pause — not if you close the tab, not if you walk away.</li>
+                  <li>You get one submission. An unsubmitted attempt never reaches the leaderboard.</li>
+                </ul>
+              </AlertDescription>
+            </Alert>
+          </CardContent>
+          <CardFooter className="justify-center">
+            {signedIn ? (
+              <form action={start}>
+                <SubmitButton size="lg" className="h-14 px-10 text-lg" pendingLabel="Starting…">Start</SubmitButton>
+              </form>
+            ) : (
+              <Button asChild size="lg" className="h-14 px-10 text-lg">
+                <Link href={`/sign-in?redirect_url=${encodeURIComponent(`/g/${publicId}`)}`}>Sign in to start</Link>
+              </Button>
+            )}
+          </CardFooter>
+        </Card>
+      </main>
+    </>
   );
 }

@@ -27,7 +27,7 @@ export function Timer({ startedAtMs, serverNowMs }: { startedAtMs: number; serve
   });
   const now = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getServerSnapshot);
   return (
-    <span data-testid="timer" className="font-mono text-2xl tabular-nums" aria-live="off">
+    <span data-testid="timer" className="font-display text-3xl font-bold tabular-nums" aria-live="off">
       {formatElapsed(now - startedAtMs)}
     </span>
   );
