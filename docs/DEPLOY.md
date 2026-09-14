@@ -1,9 +1,10 @@
 # Deploy
 
 Procedure for shipping Spotted to production on Vercel. The Vercel project is already
-linked (`.vercel/` — git-ignored, created by `vercel link`). The CLI is a pinned
-devDependency (`npm install -D vercel`), so every step below runs through `npx vercel` —
-never a globally installed CLI, so the version is reproducible.
+linked (`.vercel/` — git-ignored, created by `vercel link`) and the repository is
+connected to it, so `main` deploys itself. The CLI is not a dependency — it drags in
+dozens of `npm audit` advisories and the audit gate would fail — so the manual commands
+below run through `npx vercel`, which fetches it on demand.
 
 An agent never holds `.env*` (see `CLAUDE.md` protected paths). Steps 3 and 4 are run by
 the project owner from their own shell.
