@@ -47,9 +47,13 @@ test("plays a seeded game to a scored submission", async ({ page }) => {
   await startButton.click();
   const canvas = page.getByTestId("marker-canvas");
   await expect(canvas).toBeVisible();
-  // Positive control: once started, the same detector fires on the wire and the browser fetches the image.
-  await expect.poll(async () => (await drained(after)).length, "detector never fired after Start").toBeGreaterThan(0);
+  // Positive control: once started, the browser fetches the generated image, so the same
+  // GENERATED pattern must match a request URL. Request URLs are the reliable side of the
+  // detector: in a production build the action's streamed text/x-component body is not
+  // readable by Playwright (`res.text()` rejects), so the body detector alone cannot serve
+  // as the control — it stays as extra evidence (`after`), never as the gate.
   await expect.poll(() => requested.after.length, "generated image never requested after Start").toBeGreaterThan(0);
+  await drained(after);
   const timer = page.getByTestId("timer");
   await expect(timer).toBeVisible();
   // Server-anchored elapsed time is ticking: not zero, and different a beat later.
