@@ -10,7 +10,10 @@ export const DEFAULT_SCALE = 0.06;
 
 const pct = (scale: number | null) => `${Math.round((scale ?? DEFAULT_SCALE) * 100)}%`;
 
-export function composePrompt(game: { readonly generalPrompt: string }, objects: readonly PromptObject[], adjustments: readonly Adjustment[]): string {
+/** `hasVoids`: the supplied background is a letterboxed frame with flat grey bands to fill. */
+export type PromptGame = { readonly generalPrompt: string; readonly hasVoids?: boolean };
+
+export function composePrompt(game: PromptGame, objects: readonly PromptObject[], adjustments: readonly Adjustment[]): string {
   const sorted = [...objects].sort((a, b) => a.sortOrder - b.sortOrder);
   const lines: string[] = [];
   lines.push("You are compositing objects into a supplied scene for a hidden-object game.");
@@ -20,6 +23,7 @@ export function composePrompt(game: { readonly generalPrompt: string }, objects:
   );
   lines.push("The first image is the background. Keep it exactly as supplied: do not move, remove or restyle existing elements. Blend each object in naturally (lighting, shadows, perspective).");
   lines.push(`The output is a ${OUTPUT_ASPECT.w}:${OUTPUT_ASPECT.h} landscape frame. If the supplied background has a different shape, extend the scene naturally to fill the frame; do not crop or stretch it.`);
+  if (game.hasVoids) lines.push("The flat grey bands at the edges are empty space: extend the scene naturally into them. Keep the photographed area exactly where it is and as it is.");
   lines.push("Objects to place, one per following image, in this order:");
   sorted.forEach((o, i) => {
     const placement = o.prompt.trim() || "placed somewhere plausible";

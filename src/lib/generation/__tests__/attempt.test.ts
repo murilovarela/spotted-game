@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { attemptOnce } from "../attempt";
 import type { GenerationBackend, LabelInput } from "../backend";
-import { decodeRGBA, encodePng, letterboxTo } from "../images";
+import { decodeRGBA, dimensions, encodePng, letterboxTo } from "../images";
 import type { GameInput, LocateInput, Location, VisionLabel } from "../types";
 
 const SIZE = { width: 64, height: 64 };
@@ -58,7 +58,7 @@ describe("attemptOnce", () => {
     const out = await attemptOnce(backend, g, []);
     expect(backend.labelCalls).toBe(0);
     expect(out.candidates).toEqual([]);
-    expect(out.visionRaw).toEqual({ diffCover: 0, labels: null, locate: null });
+    expect(out.visionRaw).toEqual({ diffCover: 0, contentFraction: expect.any(Number), labels: null, locate: null });
     expect(out.result).toEqual({ ok: false, failures: [{ objectId: "ball", class: "absent", detail: expect.any(String) }] });
     expect(out.added).toHaveLength(1);
     expect(out.adjustments).toEqual(out.added);
@@ -73,7 +73,9 @@ describe("attemptOnce", () => {
     expect(backend.labelCalls).toBe(1);
     expect(out.candidates).toHaveLength(1);
     expect(out.candidates[0].source).toBe("diff");
-    expect(out.visionRaw).toEqual({ diffCover: out.candidates[0].area, labels: { fake: true }, locate: null });
+    const raw = out.visionRaw as { diffCover: number; contentFraction: number };
+    expect(raw.diffCover).toBeCloseTo(out.candidates[0].area / raw.contentFraction, 10);
+    expect(out.visionRaw).toMatchObject({ labels: { fake: true }, locate: null });
     expect(out.result.ok).toBe(true);
     if (out.result.ok) {
       const p = out.result.proposals[0];
@@ -93,8 +95,8 @@ describe("attemptOnce", () => {
     expect(backend.labelCalls).toBe(0);
     expect(out.candidates.length).toBeGreaterThan(0);
     expect(out.labels).toEqual([]);
-    // The mask is inset by the blur's reach, so a whole-frame change covers a little under 100%.
-    expect(out.visionRaw).toEqual({ diffCover: expect.closeTo(0.82, 1), labels: null, locate: null });
+    // Cover is relative to the (inset) mask, so a whole-frame change is 100% of the content.
+    expect(out.visionRaw).toEqual({ diffCover: expect.closeTo(1, 5), contentFraction: expect.closeTo(0.82, 1), labels: null, locate: null });
     expect(out.result).toEqual({ ok: false, failures: [{ objectId: null, class: "background_altered", detail: expect.stringContaining("re-rendered") }] });
   });
 
@@ -112,7 +114,7 @@ describe("attemptOnce", () => {
     const vision = out.candidates.filter((c) => c.source === "vision");
     expect(vision).toEqual([{ x: 0.3, y: 0.4, w: 0.1, h: 0.1, area: expect.closeTo(0.01, 10), source: "vision" }]);
     expect(out.labels).toEqual([{ candidate: out.candidates.length - 1, objectId: "ball", confidence: 0.9 }]);
-    expect(out.visionRaw).toEqual({ diffCover: expect.closeTo(0.82, 1), labels: null, locate: { located: true } });
+    expect(out.visionRaw).toEqual({ diffCover: expect.closeTo(1, 5), contentFraction: expect.closeTo(0.82, 1), labels: null, locate: { located: true } });
     expect(out.result.ok).toBe(true);
     if (out.result.ok) expect(out.result.proposals[0]).toMatchObject({ objectId: "ball", x: 0.35, y: 0.45 });
   });
@@ -181,6 +183,50 @@ describe("attemptOnce", () => {
     const found = await attemptOnce(backend, { ...g, background: portrait }, []);
     expect(found.candidates).toHaveLength(1);
     expect(found.candidates[0].x).toBeGreaterThan(0.25);
+  });
+
+  it("sends the model the background letterboxed to 4:3, bounded, and explains the bands only when there are any", async () => {
+    const g = await game();
+    const portrait = await encodePng(new Uint8Array(48 * 64 * 4).map((_, i) => (i % 4 === 3 ? 255 : 120)), { width: 48, height: 64 });
+    const seen: { size: { width: number; height: number }; prompt: string; content: unknown }[] = [];
+    const backend = fake(g.background, () => []);
+    backend.compose = async (input) => {
+      seen.push({ size: await dimensions(input.background), prompt: input.prompt, content: input.content });
+      return { png: g.background, ...SIZE };
+    };
+    await attemptOnce(backend, { ...g, background: portrait }, []);
+    expect(seen[0].size).toEqual({ width: 86, height: 64 }); // ceil(64 × 4/3)
+    expect(seen[0].prompt).toContain("The flat grey bands at the edges are empty space");
+    expect(seen[0].content).toEqual({ x: 19 / 86, y: 0, w: 48 / 86, h: 1 });
+    const landscape = await encodePng(new Uint8Array(64 * 48 * 4).map((_, i) => (i % 4 === 3 ? 255 : 120)), { width: 64, height: 48 });
+    await attemptOnce(backend, { ...g, background: landscape }, []);
+    expect(seen[1].size).toEqual({ width: 64, height: 48 });
+    expect(seen[1].prompt).not.toContain("flat grey bands");
+    expect(seen[1].content).toEqual({ x: 0, y: 0, w: 1, h: 1 });
+    // A large upload is still bounded after letterboxing.
+    const big = await encodePng(new Uint8Array(1800 * 1000 * 4).fill(90), { width: 1800, height: 1000 });
+    await attemptOnce(backend, { ...g, background: big }, []);
+    expect(seen[2].size).toEqual({ width: 1536, height: 1152 });
+  });
+
+  it("measures the diff cover over the real content, so a re-rendered portrait area triggers the fallback", async () => {
+    const g = await game();
+    // 48×64 portrait → the frame's content share is 0.75 of the width; paint the whole content column.
+    const portrait = await encodePng(new Uint8Array(48 * 64 * 4).map((_, i) => (i % 4 === 3 ? 255 : 120)), { width: 48, height: 64 });
+    const frame = { width: 64, height: 48 };
+    const { png: boxed } = await letterboxTo(portrait, frame);
+    const rgba = await decodeRGBA(boxed);
+    for (let y = 0; y < 48; y++) for (let x = 14; x < 50; x++) rgba.data.set([255, 0, 0, 255], (y * 64 + x) * 4);
+    const composed = await encodePng(rgba.data, frame);
+    const backend = fake(composed, () => [], () => [{ objectId: "ball", box: { x: 0.4, y: 0.4, w: 0.1, h: 0.1 }, confidence: 0.9 }]);
+    backend.compose = async () => ({ png: composed, ...frame });
+    const out = await attemptOnce(backend, { ...g, background: portrait }, []);
+    const raw = out.visionRaw as { diffCover: number; contentFraction: number };
+    expect(raw.contentFraction).toBeLessThan(0.6);
+    expect(raw.diffCover).toBeGreaterThan(0.6); // of the content, although well under 60% of the frame
+    expect(backend.labelCalls).toBe(0);
+    expect(backend.locateCalls).toEqual([["ball"]]);
+    expect(out.result.ok).toBe(true);
   });
 
   it("adds nothing on a repeated identical failure", async () => {

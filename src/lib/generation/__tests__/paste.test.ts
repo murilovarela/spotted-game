@@ -24,7 +24,7 @@ describe("paste backend", () => {
       ],
     };
     const backend = createPasteBackend();
-    const scene = await backend.compose({ ...game, prompt: "ignored" });
+    const scene = await backend.compose({ ...game, prompt: "ignored", content: { x: 0, y: 1 / 6, w: 1, h: 2 / 3 } });
     // 200×100 is wider than 4:3: the frame keeps the width and adds bands top and bottom.
     expect(scene).toMatchObject({ width: 200, height: 150 });
     expect(await dimensions(scene.png)).toEqual({ width: 200, height: 150 });

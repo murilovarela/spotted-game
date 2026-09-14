@@ -1,9 +1,13 @@
 /** The seam between the pipeline and any image/vision provider. */
 import { createGeminiBackend, GEMINI_DEFAULTS } from "./gemini";
 import { createPasteBackend } from "./paste";
-import type { Candidate, ComposeResult, GameInput, LocateInput, LocateResult, VisionLabel } from "./types";
+import type { Box, Candidate, ComposeResult, GameInput, LocateInput, LocateResult, VisionLabel } from "./types";
 
-type ComposeInput = GameInput & { readonly prompt: string };
+type ComposeInput = GameInput & {
+  readonly prompt: string;
+  /** Where the real background lies within `background` (normalized); the rest is letterbox fill. */
+  readonly content: Box;
+};
 export type LabelInput = {
   readonly game: GameInput;
   readonly scene: ComposeResult;

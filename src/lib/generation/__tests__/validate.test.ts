@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validate } from "../validate";
+import { changedFraction, validate } from "../validate";
 import type { Candidate, VisionLabel } from "../types";
 
 const image = { width: 1000, height: 1000 };
@@ -78,7 +78,7 @@ describe("validate", () => {
   });
   it("reports background_altered when a single candidate covers more than 60% of the frame", () => {
     const r = validate(objects, [box(0.1, 0.1, 0.7, 1.0)], [{ candidate: 0, objectId: "a", confidence: 0.99 }], image);
-    expect(r).toEqual({ ok: false, failures: [{ objectId: null, class: "background_altered", detail: "changed regions cover 70% of the frame; the background was re-rendered" }] });
+    expect(r).toEqual({ ok: false, failures: [{ objectId: null, class: "background_altered", detail: "changed regions cover 70% of the background; it was re-rendered" }] });
   });
   it("reports background_altered when the candidates together cover more than 60%", () => {
     const candidates = [box(0.0, 0.0, 0.8, 0.5), box(0.0, 0.6, 0.75, 0.4)]; // 0.4 + 0.3
@@ -108,6 +108,17 @@ describe("validate", () => {
     const r = validate(objects, [box(0.2, 0.2), box(0.0, 0.0, 0.9, 0.9, "vision")], [{ candidate: 0, objectId: "a", confidence: 0.9 }, { candidate: 1, objectId: "b", confidence: 0.9 }], image);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.failures.map((f) => [f.objectId, f.class])).toEqual([["b", "out_of_bounds"]]);
+  });
+  it("measures the changed fraction over the real-content share of the frame", () => {
+    const candidates = [box(0.1, 0.1, 0.8, 0.5)]; // area 0.4
+    const labels: VisionLabel[] = [{ candidate: 0, objectId: "a", confidence: 0.9 }];
+    expect(changedFraction(candidates, 0.6)).toBeCloseTo(0.667, 3);
+    const boxed = validate(objects, candidates, labels, image, 0.6);
+    expect(boxed.ok).toBe(false);
+    if (!boxed.ok) expect(boxed.failures.map((f) => [f.objectId, f.class])).toEqual([[null, "background_altered"]]);
+    const full = validate(objects, candidates, labels, image, 1);
+    expect(full.ok).toBe(false);
+    if (!full.ok) expect(full.failures.map((f) => [f.objectId, f.class])).toEqual([["b", "absent"]]);
   });
   it("falls through to the per-object checks at 50% changed", () => {
     const r = validate(objects, [box(0.1, 0.1, 0.5, 1.0)], [{ candidate: 0, objectId: "a", confidence: 0.99 }], image);

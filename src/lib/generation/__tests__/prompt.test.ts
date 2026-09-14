@@ -23,6 +23,14 @@ describe("composePrompt", () => {
     expect(p.indexOf("Scene:")).toBeLessThan(p.indexOf("This image is for a hidden-object game"));
     expect(p).toContain("The output is a 4:3 landscape frame. If the supplied background has a different shape, extend the scene naturally to fill the frame; do not crop or stretch it.");
   });
+  it("explains the grey bands only when the letterboxed background has voids", () => {
+    const bands = "The flat grey bands at the edges are empty space: extend the scene naturally into them. Keep the photographed area exactly where it is and as it is.";
+    expect(composePrompt(game, objects, [])).not.toContain(bands);
+    expect(composePrompt({ ...game, hasVoids: false }, objects, [])).not.toContain(bands);
+    const p = composePrompt({ ...game, hasVoids: true }, objects, []);
+    expect(p).toContain(bands);
+    expect(p.indexOf("4:3 landscape frame")).toBeLessThan(p.indexOf(bands));
+  });
   it("appends adjustments, object ones under their object and scene ones at the end", () => {
     const p = composePrompt(game, objects, [
       { objectId: "b", text: "Show more of the Rubber duck: at most half of it may be covered." },

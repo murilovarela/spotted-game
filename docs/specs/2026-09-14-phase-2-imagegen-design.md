@@ -60,13 +60,19 @@ start two loops. Then `after(() => runGeneration(...))`; returns `{ attemptNumbe
 ## Pixel diff (deterministic)
 
 The output frame is always 4:3 (`OUTPUT_ASPECT`; the model is asked for `4:3` at `1K`).
-The background is letterboxed into the generated dims (fit inside, centred, neutral grey
-fill) and both frames are downscaled to longest side ≤ 512 and Gaussian-blurred
+The model receives the background already letterboxed into that frame (fit inside,
+centred, neutral grey fill, then bounded to ≤ 1536) and, when there are bands, a prompt
+line saying they are empty space to extend into while the photographed area stays exactly
+where it is — so the content position is pinned and the diff compares like with like. The
+same letterbox is built at the diff grid: both frames are downscaled to longest side ≤ 512 and Gaussian-blurred
 (`DIFF_BLUR_SIGMA` 1.5) so re-encoding grain and one-pixel shifts are not changes. A mask
 of the real background pixels, inset by the blur's reach, keeps the fill bands out of the
 comparison. Mask = max channel |Δ| > 60. One 3×3 dilation. 8-connected components (flood
 fill) → boxes; drop < 0.05 % of frame; merge boxes overlapping or within 2 %; keep the
 largest `2N`. Return normalized boxes with `source: "diff"`. Tunables in `DIFF_DEFAULTS`.
+The changed fraction (`changedFraction(candidates, contentFraction)`) is measured over the
+mask's share of the frame, not the whole frame, so a re-rendered portrait photo reads as
+re-rendered even when its bands make it a minority of the frame.
 
 ## Vision
 

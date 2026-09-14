@@ -13,9 +13,14 @@ import { CONFIDENCE_THRESHOLD, FRAME_MARGIN, MAX_CHANGED_FRACTION, MAX_OVERLAP, 
 
 export type ValidatableObject = { readonly id: string; readonly label: string; readonly requestedScale: number | null };
 
-/** Fraction of the frame the diff changed (its boxes are merged, so the sum is the cover); vision boxes do not count. */
-export function changedFraction(candidates: readonly Candidate[]): number {
-  return candidates.reduce((sum, c) => (c.source === "diff" ? sum + c.area : sum), 0);
+/**
+ * Fraction of the real content the diff changed (its boxes are merged, so the sum is the
+ * cover); vision boxes do not count. `contentFraction` is the share of the frame that is
+ * real background rather than letterbox fill, so a re-rendered portrait photo reads as
+ * re-rendered even when its bands make it a minority of the frame.
+ */
+export function changedFraction(candidates: readonly Candidate[], contentFraction = 1): number {
+  return candidates.reduce((sum, c) => (c.source === "diff" ? sum + c.area : sum), 0) / contentFraction;
 }
 
 export function validate(
@@ -23,11 +28,12 @@ export function validate(
   candidates: readonly Candidate[],
   labels: readonly VisionLabel[],
   image: ImageSize,
+  contentFraction = 1,
 ): ValidationResult {
-  const changed = changedFraction(candidates);
+  const changed = changedFraction(candidates, contentFraction);
   if (changed > MAX_CHANGED_FRACTION && !candidates.some((c) => c.source === "vision")) {
     const pct = Math.round(changed * 100);
-    return { ok: false, failures: [{ objectId: null, class: "background_altered", detail: `changed regions cover ${pct}% of the frame; the background was re-rendered` }] };
+    return { ok: false, failures: [{ objectId: null, class: "background_altered", detail: `changed regions cover ${pct}% of the background; it was re-rendered` }] };
   }
 
   const failures: Failure[] = [];

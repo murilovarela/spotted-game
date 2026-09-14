@@ -4,7 +4,7 @@
  * pipeline bug, not a model quirk.
  */
 import type { GenerationBackend } from "./backend";
-import { fitRect, outputFrameFor, overlapFraction } from "./boxes";
+import { outputFrameFor, overlapFraction } from "./boxes";
 import { compositePng, dimensions, letterboxTo } from "./images";
 import { placeObjects, PLACEMENT_DEFAULTS } from "./placement";
 import type { Box } from "./types";
@@ -19,18 +19,16 @@ export function createPasteBackend(): GenerationBackend {
   return {
     name: "paste",
     async compose(input) {
-      // Same shape as the model's output: the background letterboxed into a 4:3 frame, and
-      // objects only on the real background, never in the fill bands.
+      // Same shape as the model's output: the (already letterboxed) background in a 4:3 frame,
+      // and objects only on the real background, never in the fill bands.
       const size = outputFrameFor(await dimensions(input.background));
       const { png: frame } = await letterboxTo(input.background, size);
-      const rect = fitRect(await dimensions(input.background), size);
-      const area = { x: rect.x / size.width, y: rect.y / size.height, w: rect.w / size.width, h: rect.h / size.height };
       const sprites = await Promise.all(input.objects.map(async (o) => ({ o, dims: await dimensions(o.image) })));
       const boxes = placeObjects(
         sprites.map(({ o, dims }) => ({ id: o.id, requestedScale: o.requestedScale, aspect: dims.height / dims.width })),
         size,
         input.id,
-        { ...PLACEMENT_DEFAULTS, area },
+        { ...PLACEMENT_DEFAULTS, area: input.content },
       );
       sprites.forEach(({ o }, i) => placements.set(o.id, boxes[i]));
       const layers = sprites.map(({ o }, i) => ({ png: o.image, box: boxes[i] }));

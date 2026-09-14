@@ -1,9 +1,10 @@
 /** One attempt of the SPEC §5.3 pipeline, given a backend. Shared by run.ts and the eval. */
 import type { GenerationBackend } from "./backend";
 import { DIFF_DEFAULTS, diffRegions } from "./diff";
-import { cropPng, diffScale, downscale, letterboxTo, toRGBAAt } from "./images";
+import { fitRect, outputFrameFor } from "./boxes";
+import { cropPng, diffScale, dimensions, downscale, letterboxTo, toRGBAAt } from "./images";
 import { adjustmentFor, composePrompt, mergeAdjustments } from "./prompt";
-import { type Adjustment, type Candidate, type ComposeResult, DIFF_BLUR_SIGMA, type GameInput, MAX_BACKGROUND_SIDE, MAX_CHANGED_FRACTION, MAX_OBJECT_SIDE, type ValidationResult, type VisionLabel } from "./types";
+import { type Adjustment, type Box, type Candidate, type ComposeResult, DIFF_BLUR_SIGMA, type GameInput, MAX_BACKGROUND_SIDE, MAX_CHANGED_FRACTION, MAX_OBJECT_SIDE, type ValidationResult, type VisionLabel } from "./types";
 import { changedFraction, validate } from "./validate";
 
 export type AttemptOutcome = {
@@ -19,31 +20,47 @@ export type AttemptOutcome = {
   readonly added: readonly Adjustment[];
 };
 
-/** The bytes the backend sees: bounded so an oversized upload never reaches the model as-is. */
-async function boundInputs(game: GameInput): Promise<GameInput> {
-  const [background, ...images] = await Promise.all([downscale(game.background, MAX_BACKGROUND_SIDE), ...game.objects.map((o) => downscale(o.image, MAX_OBJECT_SIDE))]);
-  return { ...game, background, objects: game.objects.map((o, i) => ({ ...o, image: images[i] })) };
+/**
+ * The bytes the backend sees. The background is letterboxed into the output frame first, so
+ * the model gets the same 4:3 canvas the diff will compare against and is told to fill the
+ * bands rather than re-compose the photo; then everything is bounded so an oversized upload
+ * never reaches the model as-is. `content` is where the real photo lies in that canvas.
+ */
+async function boundInputs(game: GameInput): Promise<{ input: GameInput; content: Box; hasVoids: boolean }> {
+  const dims = await dimensions(game.background);
+  const frame = outputFrameFor(dims);
+  const rect = fitRect(dims, frame);
+  const boxed = await letterboxTo(game.background, frame);
+  const [background, ...images] = await Promise.all([downscale(boxed.png, MAX_BACKGROUND_SIDE), ...game.objects.map((o) => downscale(o.image, MAX_OBJECT_SIDE))]);
+  return {
+    input: { ...game, background, objects: game.objects.map((o, i) => ({ ...o, image: images[i] })) },
+    content: { x: rect.x / frame.width, y: rect.y / frame.height, w: rect.w / frame.width, h: rect.h / frame.height },
+    hasVoids: rect.w < frame.width || rect.h < frame.height,
+  };
 }
 
 export async function attemptOnce(backend: GenerationBackend, game: GameInput, adjustments: readonly Adjustment[]): Promise<AttemptOutcome> {
-  const prompt = composePrompt(game, game.objects, adjustments);
-  const bounded = await boundInputs(game);
-  const image = await backend.compose({ ...bounded, prompt });
+  const { input: bounded, content, hasVoids } = await boundInputs(game);
+  const prompt = composePrompt({ ...game, hasVoids }, game.objects, adjustments);
+  const image = await backend.compose({ ...bounded, prompt, content });
   // The diff compares the generated image with the *original* background on one grid, so the
   // candidates — and every coordinate downstream — stay normalized against the generated image.
-  // The background is letterboxed into that grid the way the model was asked to extend it; the
-  // mask keeps the outpainted fill bands out of the comparison.
+  // The background is letterboxed into that grid the way the model was given it; the mask keeps
+  // the fill bands out of the comparison.
   const size = { width: image.width, height: image.height };
   const small = diffScale(size);
   // The mask is inset by the blur's reach so fill bleeding into the edge is not a change either.
   const boxed = await letterboxTo(game.background, small, Math.ceil(2 * DIFF_BLUR_SIGMA));
   const [gen, bg] = await Promise.all([toRGBAAt(image.png, small, DIFF_BLUR_SIGMA), toRGBAAt(boxed.png, small, DIFF_BLUR_SIGMA)]);
   const candidates = diffRegions(bg, gen, small.width, small.height, { ...DIFF_DEFAULTS, maxCandidates: 2 * game.objects.length }, boxed.mask);
+  // Cover is judged against the real content, not the frame: a re-rendered portrait photo is
+  // re-rendered even when its bands make it a minority of the frame.
+  const contentFraction = boxed.mask.reduce((n, v) => n + v, 0) / boxed.mask.length;
 
   // Labelling is only worth a call when there is something to label and the background survived:
   // with nothing changed every object is `absent`, and with most of the frame changed the diff
   // regions say nothing about where the objects are.
-  const diffCover = changedFraction(candidates);
+  const diffCover = changedFraction(candidates, contentFraction);
   const diffUsable = diffCover <= MAX_CHANGED_FRACTION;
   let labels: readonly VisionLabel[] = [];
   let labelRaw: unknown = null;
@@ -72,9 +89,9 @@ export async function attemptOnce(backend: GenerationBackend, game: GameInput, a
   }
   const allCandidates = [...candidates, ...located];
   const allLabels = [...labels, ...locatedLabels];
-  const visionRaw: unknown = { diffCover, labels: labelRaw, locate: locateRaw };
+  const visionRaw: unknown = { diffCover, contentFraction, labels: labelRaw, locate: locateRaw };
 
-  const result = validate(game.objects, allCandidates, allLabels, size);
+  const result = validate(game.objects, allCandidates, allLabels, size, contentFraction);
   const candidatesNew = result.ok
     ? []
     : result.failures.flatMap((f) => {
