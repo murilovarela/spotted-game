@@ -55,11 +55,24 @@ export async function loadGameForMasterById(
   return view?.viewer === "master" ? view : null;
 }
 
-export async function listGamesForMaster(db: Database, userId: string, now: Date) {
+export async function listGamesForMaster(db: Database, userId: string, now: Date, resolve: Resolver = urlResolverFor) {
   const rows = await db
-    .select({ id: games.id, publicId: games.publicId, title: games.title, startsAt: games.startsAt, endsAt: games.endsAt, publishedAt: games.publishedAt })
+    .select({
+      id: games.id,
+      publicId: games.publicId,
+      title: games.title,
+      startsAt: games.startsAt,
+      endsAt: games.endsAt,
+      publishedAt: games.publishedAt,
+      generatedImageKey: games.generatedImageKey,
+    })
     .from(games)
     .where(eq(games.masterId, userId))
     .orderBy(desc(games.createdAt));
-  return rows.map(({ publishedAt, ...r }) => ({ ...r, status: deriveStatus({ ...r, publishedAt }, now) }));
+  const resolveUrl = await resolve(rows.map((r) => r.generatedImageKey));
+  return rows.map(({ publishedAt, generatedImageKey, ...r }) => ({
+    ...r,
+    status: deriveStatus({ ...r, publishedAt }, now),
+    imageUrl: generatedImageKey === null ? null : resolveUrl(generatedImageKey),
+  }));
 }

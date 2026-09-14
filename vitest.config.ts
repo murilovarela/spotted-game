@@ -22,6 +22,8 @@ export default defineConfig({
         "src/components/canvas/format.ts",
         // `?error=` code → fixed copy (Phase 3 final review): pure, fully unit-tested.
         "src/app/g/[publicId]/error-copy.ts",
+        // Local-time formatting for the games list (Phase 5): pure, fully unit-tested.
+        "src/app/(master)/games/local-time.ts",
       ],
       exclude: [
         "**/__tests__/**",
