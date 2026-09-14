@@ -458,6 +458,58 @@ not break are the first section in it.
 
 ---
 
+## Phase 2 — Imagegen stream: final-review fix wave
+
+### What we set out to do
+
+The eight Phase 2 tasks were done and reviewed; the review left eight findings, labelled
+A to H, and this session applied all of them in one pass on `stream/imagegen`, one commit
+per finding.
+
+### What we decided and why
+
+The one decision with alternatives was the retry rule in `src/lib/generation/run.ts`. The
+loop already capped itself at 3 attempts, but a failure that added no new prompt adjustment
+would send the exact same prompt again. We considered keeping the cap as the only stop and
+relying on the adjustment table to always add something; we chose instead to stop the loop
+the moment an attempt adds nothing, append "no new adjustment; not retrying" to that row's
+reason, and keep the cap only for prompts that keep changing. The image-pipeline rule is
+"a blind retry is not a recovery loop", and a resent identical prompt is a blind retry.
+
+For the frame that differs everywhere from the background, `attemptOnce` now skips the
+vision call: `validate.ts` exports `changedFraction`, and `attempt.ts` only calls
+`backend.label` when it is at or below `MAX_CHANGED_FRACTION`. The validation result is the
+same `background_altered` failure as before; the model call it saves was pure waste.
+
+Inputs to the model are now bounded before they leave the server: `images.downscale`
+brings the background to at most 1536 and each object image to at most 512 on the long
+side. The diff still compares the generated image against the original background on one
+grid, so every coordinate stays normalized against the generated image.
+
+### What broke
+
+Un-exporting `FAILURE_CLASSES` in `types.ts` so knip would stop reporting it made ESLint
+report it instead: "assigned a value but only used as a type". The array only ever served
+to derive the `FailureClass` union, so the array went and the union is written out
+directly. knip and ESLint are both clean.
+
+### What changed because of it
+
+`diff.ts` shares one `forEachNeighbour` walk between `dilate` and `components`, which
+took the jscpd clone count from 1 to 0. The add-object form in
+`src/app/(master)/games/[id]/page.tsx` is keyed on the object count so it remounts after
+each add and no longer keeps the previous upload key; `e2e/generate.spec.ts` lost its
+"wait for the hidden key to change" workaround. The generation panel tells the master what
+to do next per failure class: prompts for model failures, server configuration for
+`config:`, logs for `error:` and `stale`. SPEC §5.3 gained the "background re-rendered"
+row and the design doc records the stop rule and the input bounds.
+
+Final numbers: 183 unit tests, coverage 99.04 % (baseline 98.03), 0 clones, knip clean,
+7 integration tests on the Neon branch, 8 Playwright tests in paste mode. No Gemini call
+was made.
+
+---
+
 ## Phase 3 — Canvas stream
 
 Branch `stream/canvas`, 25 commits, one session. Plan: `docs/plans/2026-09-13-phase-3-canvas.md`;
