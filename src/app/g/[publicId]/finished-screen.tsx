@@ -9,8 +9,10 @@ export function FinishedScreen({ view, leaderboard }: { view: FinishedGameView; 
     <>
       <PlayerBar />
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-8">
-        <h1 className="font-display text-3xl font-bold">{view.title}</h1>
-        <p className="text-muted-foreground">This game has ended. Here is where everything was.</p>
+        <div className="text-center">
+          <h1 className="text-balance font-display text-3xl font-bold">{view.title}</h1>
+          <p className="mt-1 text-muted-foreground">This game has ended. Here is where everything was.</p>
+        </div>
         <div className="overflow-hidden rounded-xl">
           <MarkerCanvas
             image={view.image}
