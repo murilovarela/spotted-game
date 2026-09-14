@@ -17,7 +17,13 @@ export type DiffOptions = {
   readonly mergeGap: number;
   readonly maxCandidates: number;
 };
-export const DIFF_DEFAULTS: DiffOptions = { threshold: 40, dilations: 2, minAreaFraction: 0.0005, mergeGap: 0.02, maxCandidates: 10 };
+/**
+ * Tuned on the golden set (evals/generation): Nano Banana re-encodes the whole frame at
+ * JPEG-like amplitude (2–8% of pixels differ by > 40), and at threshold 40 with two
+ * dilations those specks chain-merge through `mergeGap` into one box covering a third of
+ * the frame that swallows every object. 60 / 1 leaves one region per placed object.
+ */
+export const DIFF_DEFAULTS: DiffOptions = { threshold: 60, dilations: 1, minAreaFraction: 0.0005, mergeGap: 0.02, maxCandidates: 10 };
 
 export type PixelBox = { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
 export type Component = PixelBox & { readonly pixels: number };

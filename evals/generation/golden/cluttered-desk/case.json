@@ -1,0 +1,24 @@
+{
+  "title": "Cluttered desk",
+  "generalPrompt": "A cluttered home office desk, hard difficulty.",
+  "objects": [
+    {
+      "file": "objects/watch.png",
+      "label": "Wristwatch",
+      "prompt": "lying flat on the desk beside the keyboard",
+      "requestedScale": 0.1
+    },
+    {
+      "file": "objects/toy-car.png",
+      "label": "Toy car",
+      "prompt": "on the desk in front of the monitor",
+      "requestedScale": 0.1
+    },
+    {
+      "file": "objects/sunglasses.png",
+      "label": "Sunglasses",
+      "prompt": "folded on top of a notebook",
+      "requestedScale": 0.12
+    }
+  ]
+}

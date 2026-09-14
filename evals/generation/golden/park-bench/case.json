@@ -1,0 +1,18 @@
+{
+  "title": "Park bench",
+  "generalPrompt": "A quiet park with a wooden bench, medium difficulty.",
+  "objects": [
+    {
+      "file": "objects/duck.png",
+      "label": "Rubber duck",
+      "prompt": "sitting on the bench seat",
+      "requestedScale": 0.08
+    },
+    {
+      "file": "objects/tennis-ball.png",
+      "label": "Tennis ball",
+      "prompt": "on the path near a bench leg",
+      "requestedScale": 0.08
+    }
+  ]
+}

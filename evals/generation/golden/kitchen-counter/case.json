@@ -1,0 +1,24 @@
+{
+  "title": "Kitchen counter",
+  "generalPrompt": "A bright home kitchen counter, medium difficulty.",
+  "objects": [
+    {
+      "file": "objects/mug.png",
+      "label": "Coffee mug",
+      "prompt": "on the counter next to the kettle",
+      "requestedScale": 0.1
+    },
+    {
+      "file": "objects/apple.png",
+      "label": "Red apple",
+      "prompt": "on the cutting board",
+      "requestedScale": 0.08
+    },
+    {
+      "file": "objects/bottle.png",
+      "label": "Green bottle",
+      "prompt": "standing at the back of the counter against the wall",
+      "requestedScale": 0.1
+    }
+  ]
+}
