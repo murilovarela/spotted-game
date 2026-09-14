@@ -54,8 +54,18 @@ export function presignPut(key: string, contentType: string): Promise<string> {
   });
 }
 
-export function presignGet(key: string): Promise<string> {
-  return getSignedUrl(s3(), new GetObjectCommand({ Bucket: BUCKET, Key: key }), { expiresIn: 3600 });
+/** Floors to the hour so presigned URLs are stable across renders (browser cache hits). */
+export function hourBucket(now: Date): Date {
+  return new Date(Math.floor(now.getTime() / 3_600_000) * 3_600_000);
+}
+
+/**
+ * Signed against the current hour bucket with a 2 h lifetime: every render inside the same
+ * hour yields byte-identical URLs (so polling pages do not refetch every image), and a URL
+ * minted at :59 stays valid for at least an hour.
+ */
+export function presignGet(key: string, now: Date = new Date()): Promise<string> {
+  return getSignedUrl(s3(), new GetObjectCommand({ Bucket: BUCKET, Key: key }), { expiresIn: 7200, signingDate: hourBucket(now) });
 }
 
 /** Server-side upload (seed, generation). The app itself never proxies bytes — browsers use `presignPut`. */
@@ -73,7 +83,7 @@ export async function getObject(key: string): Promise<Uint8Array> {
 /** Presign a set of keys up front so a synchronous `resolveUrl` can be given to `projectGame`. */
 export async function urlResolverFor(keys: readonly (string | null)[]): Promise<(key: string) => string> {
   const unique = [...new Set(keys.filter((k): k is string => k !== null))];
-  const urls = await Promise.all(unique.map(presignGet));
+  const urls = await Promise.all(unique.map((k) => presignGet(k)));
   const map = new Map(unique.map((k, i) => [k, urls[i]]));
   return (key) => {
     const url = map.get(key);

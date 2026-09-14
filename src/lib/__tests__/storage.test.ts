@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { isAllowedImageType, isAssetKind, isOwnedKey, objectKey } from "../storage";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { hourBucket, isAllowedImageType, isAssetKind, isOwnedKey, objectKey, presignGet } from "../storage";
 
 describe("objectKey", () => {
   it("namespaces by game and kind and picks the extension from the content type", () => {
@@ -53,5 +53,30 @@ describe("isOwnedKey", () => {
   it("rejects a key containing a .. path-traversal segment", () => {
     expect(isOwnedKey("background", gameId, `games/${gameId}/background/../../../etc/passwd`)).toBe(false);
     expect(isOwnedKey("background", gameId, `games/${gameId}/background/..`)).toBe(false);
+  });
+});
+
+describe("hourBucket", () => {
+  it("floors to the hour in UTC", () => {
+    expect(hourBucket(new Date("2026-09-14T13:59:59.999Z")).toISOString()).toBe("2026-09-14T13:00:00.000Z");
+    expect(hourBucket(new Date("2026-09-14T14:00:00.000Z")).toISOString()).toBe("2026-09-14T14:00:00.000Z");
+  });
+});
+
+describe("presignGet", () => {
+  const env = process.env;
+  beforeEach(() => {
+    process.env = { ...env, AWS_ACCESS_KEY_ID: "test", AWS_SECRET_ACCESS_KEY: "test", AWS_ENDPOINT_URL_S3: "https://storage.example.test", AWS_REGION: "us-east-1" };
+  });
+  afterEach(() => {
+    process.env = env;
+  });
+  it("is byte-identical within the same hour and differs across hours", async () => {
+    const a = await presignGet("games/g/generated/x.png", new Date("2026-09-14T13:01:00Z"));
+    const b = await presignGet("games/g/generated/x.png", new Date("2026-09-14T13:58:00Z"));
+    const c = await presignGet("games/g/generated/x.png", new Date("2026-09-14T14:01:00Z"));
+    expect(a).toBe(b);
+    expect(a).not.toBe(c);
+    expect(a).toContain("X-Amz-Expires=7200");
   });
 });
