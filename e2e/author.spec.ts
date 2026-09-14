@@ -13,11 +13,10 @@ test("master positions by dragging, confirms, and publishes", async ({ page }) =
   const badge = (text: "confirmed" | "unconfirmed") => page.getByText(text, { exact: true });
   await expect(badge("unconfirmed")).toHaveCount(1);
 
-  // Invariant 4 at the UI: publish is refused while any object is unconfirmed.
-  await page.getByRole("button", { name: "Publish" }).click();
-  // Next's route announcer is also role="alert", so narrow to the one carrying the message.
-  await expect(page.getByRole("alert").filter({ hasText: /not confirmed/ })).toBeVisible();
-  await settled(canvas); // the redirect re-rendered the page; wait for the reflow
+  // Invariant 4 at the UI: publish is disabled while any object is unconfirmed, with the
+  // reason spelled out — the transaction (src/lib/games/__tests__/*) still enforces it.
+  await expect(page.getByRole("button", { name: "Publish" })).toBeDisabled();
+  await expect(page.getByTestId("publish-blockers")).toContainText(/confirm 1 object/i);
 
   // A click that does not move the marker is not a change: no save, badge untouched (zero-delta guard).
   const still = await centerOf(markers.nth(0));

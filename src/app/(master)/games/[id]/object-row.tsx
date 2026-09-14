@@ -1,5 +1,8 @@
+import { Trash2 } from "lucide-react";
 import type { ObjectForMaster } from "@/lib/types";
 import { confirmObjectAction, removeObjectAction } from "@/lib/games/actions";
+import { Badge } from "@/components/ui/badge";
+import { SubmitButton } from "@/components/shell/submit-button";
 import { redirectBack } from "./redirect-back";
 
 export function ObjectRow({ gameId, object, editable }: { gameId: string; object: ObjectForMaster; editable: boolean }) {
@@ -16,23 +19,33 @@ export function ObjectRow({ gameId, object, editable }: { gameId: string; object
   return (
     <li className="flex items-center gap-4 py-3">
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={object.sourceImageUrl} alt={object.label} className="h-12 w-12 rounded object-cover" />
+      <img src={object.sourceImageUrl} alt={object.label} className="size-14 shrink-0 rounded-lg object-cover" />
       <div className="flex-1">
         <div className="font-medium">{object.label}</div>
-        <div className="text-xs text-neutral-500">{pos}</div>
+        <div className="text-xs text-muted-foreground">{pos}</div>
       </div>
-      <span className={`rounded px-2 py-1 text-xs ${object.confirmed ? "bg-green-100" : "bg-amber-100"}`}>
+      <Badge
+        variant="outline"
+        className={
+          object.confirmed
+            ? "border-transparent bg-success text-success-foreground"
+            : "border-transparent bg-amber-100 text-amber-900 dark:bg-amber-900 dark:text-amber-100"
+        }
+      >
         {object.confirmed ? "confirmed" : "unconfirmed"}
-      </span>
+      </Badge>
       {editable && (
         <>
           <form action={confirm}>
-            <button disabled={object.x === null || object.confirmed} className="rounded border px-2 py-1 text-sm disabled:opacity-40">
+            <SubmitButton size="sm" disabled={object.x === null || object.confirmed}>
               Confirm
-            </button>
+            </SubmitButton>
           </form>
           <form action={remove}>
-            <button className="rounded border px-2 py-1 text-sm">Remove</button>
+            <SubmitButton size="sm" variant="ghost">
+              <Trash2 aria-hidden />
+              Remove
+            </SubmitButton>
           </form>
         </>
       )}
