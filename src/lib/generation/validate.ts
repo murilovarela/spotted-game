@@ -2,8 +2,10 @@
  * SPEC §5.3 validation predicate. Pure: candidates + vision labels in, proposals or
  * failures out. Per object the checks run in SPEC order and the first failure wins;
  * overlap is checked last, pairwise, among objects that passed their own checks. Before
- * any of that: if the changed regions cover most of the frame the background itself was
- * re-rendered, and that single scene-level failure replaces the per-object ones.
+ * any of that: if the diff's changed regions cover most of the frame the background itself
+ * was re-rendered; unless the vision model was then asked to locate the objects directly
+ * (candidates with `source: "vision"`), that single scene-level failure replaces the
+ * per-object ones.
  */
 import type { ImageSize } from "@/lib/types";
 import { insideMargin, overlapFraction, scaleRatio, toCircle } from "./boxes";
@@ -11,9 +13,9 @@ import { CONFIDENCE_THRESHOLD, FRAME_MARGIN, MAX_CHANGED_FRACTION, MAX_OVERLAP, 
 
 export type ValidatableObject = { readonly id: string; readonly label: string; readonly requestedScale: number | null };
 
-/** Fraction of the frame covered by candidates (boxes are already merged, so the sum is the cover). */
+/** Fraction of the frame the diff changed (its boxes are merged, so the sum is the cover); vision boxes do not count. */
 export function changedFraction(candidates: readonly Candidate[]): number {
-  return candidates.reduce((sum, c) => sum + c.area, 0);
+  return candidates.reduce((sum, c) => (c.source === "diff" ? sum + c.area : sum), 0);
 }
 
 export function validate(
@@ -23,7 +25,7 @@ export function validate(
   image: ImageSize,
 ): ValidationResult {
   const changed = changedFraction(candidates);
-  if (changed > MAX_CHANGED_FRACTION) {
+  if (changed > MAX_CHANGED_FRACTION && !candidates.some((c) => c.source === "vision")) {
     const pct = Math.round(changed * 100);
     return { ok: false, failures: [{ objectId: null, class: "background_altered", detail: `changed regions cover ${pct}% of the frame; the background was re-rendered` }] };
   }

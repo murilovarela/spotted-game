@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { attemptOnce } from "../attempt";
 import type { GenerationBackend, LabelInput } from "../backend";
 import { decodeRGBA, encodePng, letterboxTo } from "../images";
-import type { GameInput, VisionLabel } from "../types";
+import type { GameInput, LocateInput, Location, VisionLabel } from "../types";
 
 const SIZE = { width: 64, height: 64 };
 
@@ -15,15 +15,26 @@ async function scene(rect?: { x: number; y: number; w: number; h: number }): Pro
   return encodePng(data, SIZE);
 }
 
-function fake(composed: Uint8Array, labels: (input: LabelInput) => VisionLabel[]): GenerationBackend & { labelCalls: number } {
-  const b = {
+type Fake = GenerationBackend & { labelCalls: number; locateCalls: string[][] };
+
+function fake(composed: Uint8Array, labels: (input: LabelInput) => VisionLabel[], locate?: (input: LocateInput) => Location[]): Fake {
+  const b: Fake = {
     name: "fake",
     labelCalls: 0,
+    locateCalls: [],
     compose: async () => ({ png: composed, ...SIZE }),
     label: async (input: LabelInput) => {
       b.labelCalls++;
       return { labels: labels(input), raw: { fake: true } };
     },
+    ...(locate
+      ? {
+          locate: async (input: LocateInput) => {
+            b.locateCalls.push(input.objects.map((o) => o.id));
+            return { boxes: locate(input), raw: { located: true } };
+          },
+        }
+      : {}),
   };
   return b;
 }
@@ -47,7 +58,7 @@ describe("attemptOnce", () => {
     const out = await attemptOnce(backend, g, []);
     expect(backend.labelCalls).toBe(0);
     expect(out.candidates).toEqual([]);
-    expect(out.visionRaw).toBeNull();
+    expect(out.visionRaw).toEqual({ diffCover: 0, labels: null, locate: null });
     expect(out.result).toEqual({ ok: false, failures: [{ objectId: "ball", class: "absent", detail: expect.any(String) }] });
     expect(out.added).toHaveLength(1);
     expect(out.adjustments).toEqual(out.added);
@@ -61,7 +72,8 @@ describe("attemptOnce", () => {
     const out = await attemptOnce(backend, g, []);
     expect(backend.labelCalls).toBe(1);
     expect(out.candidates).toHaveLength(1);
-    expect(out.visionRaw).toEqual({ fake: true });
+    expect(out.candidates[0].source).toBe("diff");
+    expect(out.visionRaw).toEqual({ diffCover: out.candidates[0].area, labels: { fake: true }, locate: null });
     expect(out.result.ok).toBe(true);
     if (out.result.ok) {
       const p = out.result.proposals[0];
@@ -72,7 +84,7 @@ describe("attemptOnce", () => {
     expect(out.added).toEqual([]);
   });
 
-  it("never calls vision when the whole frame changed, and reports background_altered", async () => {
+  it("without locate: never labels a re-rendered frame, and reports background_altered", async () => {
     const g = await game();
     // A frame that differs from the background everywhere: the model re-rendered the scene.
     const composed = await scene({ x: 0, y: 0, w: SIZE.width, h: SIZE.height });
@@ -81,8 +93,67 @@ describe("attemptOnce", () => {
     expect(backend.labelCalls).toBe(0);
     expect(out.candidates.length).toBeGreaterThan(0);
     expect(out.labels).toEqual([]);
-    expect(out.visionRaw).toBeNull();
+    expect(out.visionRaw).toEqual({ diffCover: 1, labels: null, locate: null });
     expect(out.result).toEqual({ ok: false, failures: [{ objectId: null, class: "background_altered", detail: expect.stringContaining("re-rendered") }] });
+  });
+
+  it("with an unusable diff: asks vision to locate every object, and validates those boxes", async () => {
+    const g = await game();
+    const composed = await scene({ x: 0, y: 0, w: SIZE.width, h: SIZE.height });
+    const backend = fake(
+      composed,
+      () => [],
+      () => [{ objectId: "ball", box: { x: 0.3, y: 0.4, w: 0.1, h: 0.1 }, confidence: 0.9 }],
+    );
+    const out = await attemptOnce(backend, g, []);
+    expect(backend.labelCalls).toBe(0);
+    expect(backend.locateCalls).toEqual([["ball"]]);
+    const vision = out.candidates.filter((c) => c.source === "vision");
+    expect(vision).toEqual([{ x: 0.3, y: 0.4, w: 0.1, h: 0.1, area: expect.closeTo(0.01, 10), source: "vision" }]);
+    expect(out.labels).toEqual([{ candidate: out.candidates.length - 1, objectId: "ball", confidence: 0.9 }]);
+    expect(out.visionRaw).toEqual({ diffCover: 1, labels: null, locate: { located: true } });
+    expect(out.result.ok).toBe(true);
+    if (out.result.ok) expect(out.result.proposals[0]).toMatchObject({ objectId: "ball", x: 0.35, y: 0.45 });
+  });
+
+  it("with an unusable diff and nothing located: reports background_altered", async () => {
+    const g = await game();
+    const composed = await scene({ x: 0, y: 0, w: SIZE.width, h: SIZE.height });
+    const backend = fake(composed, () => [], () => []);
+    const out = await attemptOnce(backend, g, []);
+    expect(backend.locateCalls).toEqual([["ball"]]);
+    expect(out.result).toEqual({ ok: false, failures: [{ objectId: null, class: "background_altered", detail: expect.stringContaining("re-rendered") }] });
+  });
+
+  it("when the diff finds one object of two: locates only the missing one", async () => {
+    const g = await game();
+    const two: GameInput = { ...g, objects: [...g.objects, { id: "cube", label: "Cube", prompt: "", requestedScale: null, sortOrder: 1, image: g.objects[0].image }] };
+    const composed = await scene({ x: 20, y: 20, w: 12, h: 12 });
+    const backend = fake(
+      composed,
+      ({ candidates }) => candidates.map((_, i) => ({ candidate: i, objectId: "ball", confidence: 0.95 })),
+      () => [{ objectId: "cube", box: { x: 0.7, y: 0.7, w: 0.1, h: 0.1 }, confidence: 0.8 }],
+    );
+    const out = await attemptOnce(backend, two, []);
+    expect(backend.labelCalls).toBe(1);
+    expect(backend.locateCalls).toEqual([["cube"]]);
+    expect(out.candidates.map((c) => c.source)).toEqual(["diff", "vision"]);
+    expect(out.result.ok).toBe(true);
+    if (out.result.ok) expect(out.result.proposals.map((p) => p.objectId)).toEqual(["ball", "cube"]);
+    // Located for an object we did not ask about: ignored.
+    const stray = fake(composed, ({ candidates }) => candidates.map((_, i) => ({ candidate: i, objectId: "ball", confidence: 0.95 })), () => [{ objectId: "ball", box: { x: 0.7, y: 0.7, w: 0.1, h: 0.1 }, confidence: 1 }]);
+    const missing = await attemptOnce(stray, two, []);
+    expect(missing.candidates.map((c) => c.source)).toEqual(["diff"]);
+    expect(missing.result).toEqual({ ok: false, failures: [{ objectId: "cube", class: "absent", detail: expect.any(String) }] });
+  });
+
+  it("does not locate when every object already has a label", async () => {
+    const g = await game();
+    const composed = await scene({ x: 20, y: 20, w: 12, h: 12 });
+    const backend = fake(composed, ({ candidates }) => candidates.map((_, i) => ({ candidate: i, objectId: "ball", confidence: 0.3 })), () => []);
+    const out = await attemptOnce(backend, g, []);
+    expect(backend.locateCalls).toEqual([]);
+    expect(out.result).toEqual({ ok: false, failures: [{ objectId: "ball", class: "low_confidence", detail: expect.any(String) }] });
   });
 
   it("diffs against the background letterboxed into the output frame: changes in the fill bands are not candidates", async () => {

@@ -39,17 +39,41 @@ export async function attemptOnce(backend: GenerationBackend, game: GameInput, a
   const [gen, bg] = await Promise.all([toRGBAAt(image.png, small), toRGBAAt(boxed.png, small)]);
   const candidates = diffRegions(bg, gen, small.width, small.height, { ...DIFF_DEFAULTS, maxCandidates: 2 * game.objects.length }, boxed.mask);
 
-  // Vision is only worth calling when there is something to label and the background survived:
-  // with nothing changed every object is `absent`, and with most of the frame changed `validate`
-  // reports `background_altered` regardless of what the labels would have said.
+  // Labelling is only worth a call when there is something to label and the background survived:
+  // with nothing changed every object is `absent`, and with most of the frame changed the diff
+  // regions say nothing about where the objects are.
+  const diffCover = changedFraction(candidates);
+  const diffUsable = diffCover <= MAX_CHANGED_FRACTION;
   let labels: readonly VisionLabel[] = [];
-  let visionRaw: unknown = null;
-  if (candidates.length > 0 && changedFraction(candidates) <= MAX_CHANGED_FRACTION) {
+  let labelRaw: unknown = null;
+  if (candidates.length > 0 && diffUsable) {
     const crops = await Promise.all(candidates.map((c) => cropPng(image.png, c, size)));
-    ({ labels, raw: visionRaw } = await backend.label({ game: bounded, scene: image, candidates, crops }));
+    ({ labels, raw: labelRaw } = await backend.label({ game: bounded, scene: image, candidates, crops }));
   }
 
-  const result = validate(game.objects, candidates, labels, size);
+  // Fallback: objects the diff could not see (all of them when it was unusable) are put to the
+  // vision model directly. Its boxes join the candidates as `source: "vision"` with a synthetic
+  // label, and go through the same validation; the master still confirms by dragging (SPEC §5.4).
+  const labelled = new Set(labels.filter((l) => l.objectId !== null && candidates[l.candidate]).map((l) => l.objectId));
+  const unresolved = diffUsable ? bounded.objects.filter((o) => !labelled.has(o.id)) : bounded.objects;
+  let locateRaw: unknown = null;
+  const located: Candidate[] = [];
+  const locatedLabels: VisionLabel[] = [];
+  if (unresolved.length > 0 && backend.locate) {
+    const { boxes, raw } = await backend.locate({ scene: image, objects: unresolved });
+    locateRaw = raw;
+    const asked = new Set(unresolved.map((o) => o.id));
+    for (const l of boxes) {
+      if (!asked.has(l.objectId)) continue;
+      locatedLabels.push({ candidate: candidates.length + located.length, objectId: l.objectId, confidence: l.confidence });
+      located.push({ ...l.box, area: l.box.w * l.box.h, source: "vision" });
+    }
+  }
+  const allCandidates = [...candidates, ...located];
+  const allLabels = [...labels, ...locatedLabels];
+  const visionRaw: unknown = { diffCover, labels: labelRaw, locate: locateRaw };
+
+  const result = validate(game.objects, allCandidates, allLabels, size);
   const candidatesNew = result.ok
     ? []
     : result.failures.flatMap((f) => {
@@ -60,5 +84,5 @@ export async function attemptOnce(backend: GenerationBackend, game: GameInput, a
   // failure adds nothing, and the run row records adjustment = null for it.
   const merged = mergeAdjustments(adjustments, candidatesNew);
   const added = merged.slice(adjustments.length);
-  return { prompt, image, candidates, labels, visionRaw, result, adjustments: merged, added };
+  return { prompt, image, candidates: allCandidates, labels: allLabels, visionRaw, result, adjustments: merged, added };
 }

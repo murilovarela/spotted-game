@@ -149,7 +149,7 @@ export function diffRegions(bg: Uint8Array, gen: Uint8Array, width: number, heig
   const boxes = components(mask, width, height).filter((c) => c.pixels >= minPixels);
   const gapPx = Math.round(opts.mergeGap * Math.max(width, height));
   return mergeBoxes(boxes, gapPx)
-    .map((b) => ({ x: b.x / width, y: b.y / height, w: b.w / width, h: b.h / height, area: (b.w * b.h) / (width * height) }))
+    .map((b) => ({ x: b.x / width, y: b.y / height, w: b.w / width, h: b.h / height, area: (b.w * b.h) / (width * height), source: "diff" as const }))
     .sort((a, b) => b.area - a.area)
     .slice(0, opts.maxCandidates);
 }

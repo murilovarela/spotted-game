@@ -3,7 +3,7 @@ import { validate } from "../validate";
 import type { Candidate, VisionLabel } from "../types";
 
 const image = { width: 1000, height: 1000 };
-const box = (x: number, y: number, w = 0.1, h = 0.1): Candidate => ({ x, y, w, h, area: w * h });
+const box = (x: number, y: number, w = 0.1, h = 0.1, source: Candidate["source"] = "diff"): Candidate => ({ x, y, w, h, area: w * h, source });
 const objects = [
   { id: "a", label: "Cup", requestedScale: null },
   { id: "b", label: "Duck", requestedScale: null },
@@ -89,6 +89,25 @@ describe("validate", () => {
     const r = validate(objects, candidates, labels, image);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.failures.map((f) => [f.objectId, f.class])).toEqual([[null, "background_altered"]]);
+  });
+  it("with an unusable diff, validates vision-located candidates instead of failing background_altered", () => {
+    const candidates = [box(0.1, 0.1, 0.7, 1.0), box(0.2, 0.2, 0.05, 0.05, "vision"), box(0.6, 0.6, 0.05, 0.05, "vision")];
+    const labels: VisionLabel[] = [
+      { candidate: 1, objectId: "a", confidence: 0.9 },
+      { candidate: 2, objectId: "b", confidence: 0.8 },
+    ];
+    const r = validate(objects, candidates, labels, image);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.proposals.map((p) => p.objectId)).toEqual(["a", "b"]);
+    // Located for one object only: the other is absent, not background_altered.
+    const partial = validate(objects, candidates.slice(0, 2), labels.slice(0, 1), image);
+    expect(partial).toEqual({ ok: false, failures: [{ objectId: "b", class: "absent", detail: "no changed region was labelled as this object" }] });
+  });
+  it("counts only diff candidates towards the changed fraction", () => {
+    // A large vision box does not make the background "altered".
+    const r = validate(objects, [box(0.2, 0.2), box(0.0, 0.0, 0.9, 0.9, "vision")], [{ candidate: 0, objectId: "a", confidence: 0.9 }, { candidate: 1, objectId: "b", confidence: 0.9 }], image);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.failures.map((f) => [f.objectId, f.class])).toEqual([["b", "out_of_bounds"]]);
   });
   it("falls through to the per-object checks at 50% changed", () => {
     const r = validate(objects, [box(0.1, 0.1, 0.5, 1.0)], [{ candidate: 0, objectId: "a", confidence: 0.99 }], image);

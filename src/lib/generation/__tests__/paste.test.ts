@@ -41,5 +41,10 @@ describe("paste backend", () => {
     const { labels } = await backend.label({ game, scene, candidates, crops: [] });
     expect(labels.map((l) => l.objectId).sort()).toEqual(["a", "b"]);
     for (const l of labels) expect(l.confidence).toBe(1);
+    // locate answers with the same known placements, for the objects asked about only.
+    const located = await backend.locate?.({ scene, objects: [game.objects[1], { ...game.objects[0], id: "unknown" }] });
+    expect(located?.boxes).toHaveLength(1);
+    expect(located?.boxes[0]).toMatchObject({ objectId: "b", confidence: 1 });
+    expect(candidates.some((c) => c.x <= (located?.boxes[0].box.x ?? -1) && c.x + c.w >= (located?.boxes[0].box.x ?? 2))).toBe(true);
   });
 });
