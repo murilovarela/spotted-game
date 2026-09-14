@@ -4,8 +4,8 @@
  * pipeline bug, not a model quirk.
  */
 import type { GenerationBackend } from "./backend";
-import { outputFrameFor, overlapFraction } from "./boxes";
-import { compositePng, dimensions, letterboxTo } from "./images";
+import { overlapFraction } from "./boxes";
+import { compositePng, dimensions } from "./images";
 import { placeObjects, PLACEMENT_DEFAULTS } from "./placement";
 import type { Box } from "./types";
 
@@ -19,10 +19,9 @@ export function createPasteBackend(): GenerationBackend {
   return {
     name: "paste",
     async compose(input) {
-      // Same shape as the model's output: the (already letterboxed) background in a 4:3 frame,
-      // and objects only on the real background, never in the fill bands.
-      const size = outputFrameFor(await dimensions(input.background));
-      const { png: frame } = await letterboxTo(input.background, size);
+      // The background arrives already letterboxed into the 4:3 frame (attempt.ts); objects go
+      // only on the real background (`content`), never in the fill bands.
+      const size = await dimensions(input.background);
       const sprites = await Promise.all(input.objects.map(async (o) => ({ o, dims: await dimensions(o.image) })));
       const boxes = placeObjects(
         sprites.map(({ o, dims }) => ({ id: o.id, requestedScale: o.requestedScale, aspect: dims.height / dims.width })),
@@ -32,7 +31,7 @@ export function createPasteBackend(): GenerationBackend {
       );
       sprites.forEach(({ o }, i) => placements.set(o.id, boxes[i]));
       const layers = sprites.map(({ o }, i) => ({ png: o.image, box: boxes[i] }));
-      return compositePng(frame, layers);
+      return compositePng(input.background, layers);
     },
     async label({ game, candidates }) {
       const labels = known(game.objects).flatMap(({ objectId, box }) => {

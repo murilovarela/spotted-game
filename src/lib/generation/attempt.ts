@@ -1,7 +1,7 @@
 /** One attempt of the SPEC §5.3 pipeline, given a backend. Shared by run.ts and the eval. */
 import type { GenerationBackend } from "./backend";
 import { DIFF_DEFAULTS, diffRegions } from "./diff";
-import { fitRect, outputFrameFor } from "./boxes";
+import { frameGeometry } from "./boxes";
 import { cropPng, diffScale, dimensions, downscale, letterboxTo, toRGBAAt } from "./images";
 import { adjustmentFor, composePrompt, mergeAdjustments } from "./prompt";
 import { type Adjustment, type Box, type Candidate, type ComposeResult, DIFF_BLUR_SIGMA, type GameInput, MAX_BACKGROUND_SIDE, MAX_CHANGED_FRACTION, MAX_OBJECT_SIDE, type ValidationResult, type VisionLabel } from "./types";
@@ -27,16 +27,10 @@ export type AttemptOutcome = {
  * never reaches the model as-is. `content` is where the real photo lies in that canvas.
  */
 async function boundInputs(game: GameInput): Promise<{ input: GameInput; content: Box; hasVoids: boolean }> {
-  const dims = await dimensions(game.background);
-  const frame = outputFrameFor(dims);
-  const rect = fitRect(dims, frame);
+  const { frame, content, hasVoids } = frameGeometry(await dimensions(game.background));
   const boxed = await letterboxTo(game.background, frame);
   const [background, ...images] = await Promise.all([downscale(boxed.png, MAX_BACKGROUND_SIDE), ...game.objects.map((o) => downscale(o.image, MAX_OBJECT_SIDE))]);
-  return {
-    input: { ...game, background, objects: game.objects.map((o, i) => ({ ...o, image: images[i] })) },
-    content: { x: rect.x / frame.width, y: rect.y / frame.height, w: rect.w / frame.width, h: rect.h / frame.height },
-    hasVoids: rect.w < frame.width || rect.h < frame.height,
-  };
+  return { input: { ...game, background, objects: game.objects.map((o, i) => ({ ...o, image: images[i] })) }, content, hasVoids };
 }
 
 export async function attemptOnce(backend: GenerationBackend, game: GameInput, adjustments: readonly Adjustment[]): Promise<AttemptOutcome> {
@@ -55,6 +49,7 @@ export async function attemptOnce(backend: GenerationBackend, game: GameInput, a
   const candidates = diffRegions(bg, gen, small.width, small.height, { ...DIFF_DEFAULTS, maxCandidates: 2 * game.objects.length }, boxed.mask);
   // Cover is judged against the real content, not the frame: a re-rendered portrait photo is
   // re-rendered even when its bands make it a minority of the frame.
+  // With no comparable pixels at all (a tiny upload the inset swallows) the diff is unusable, explicitly.
   const contentFraction = boxed.mask.reduce((n, v) => n + v, 0) / boxed.mask.length;
 
   // Labelling is only worth a call when there is something to label and the background survived:

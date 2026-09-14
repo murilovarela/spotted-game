@@ -229,6 +229,21 @@ describe("attemptOnce", () => {
     expect(out.result.ok).toBe(true);
   });
 
+  it("treats a frame with no comparable pixels as an unusable diff and goes straight to locate", async () => {
+    const g = await game();
+    // 4×4 frames: the 3px blur inset leaves no mask pixel at all.
+    const tiny = await encodePng(new Uint8Array(4 * 4 * 4).fill(120), { width: 4, height: 4 });
+    const backend = fake(tiny, () => [], () => [{ objectId: "ball", box: { x: 0.3, y: 0.3, w: 0.2, h: 0.2 }, confidence: 0.9 }]);
+    backend.compose = async () => ({ png: tiny, width: 4, height: 4 });
+    const out = await attemptOnce(backend, { ...g, background: tiny }, []);
+    const raw = out.visionRaw as { diffCover: number; contentFraction: number };
+    expect(raw.contentFraction).toBe(0);
+    expect(raw.diffCover).toBe(Number.POSITIVE_INFINITY);
+    expect(backend.labelCalls).toBe(0);
+    expect(backend.locateCalls).toEqual([["ball"]]);
+    expect(out.result.ok).toBe(true);
+  });
+
   it("adds nothing on a repeated identical failure", async () => {
     const g = await game();
     const backend = fake(g.background, () => []);

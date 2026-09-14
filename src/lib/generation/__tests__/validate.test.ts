@@ -120,6 +120,13 @@ describe("validate", () => {
     expect(full.ok).toBe(false);
     if (!full.ok) expect(full.failures.map((f) => [f.objectId, f.class])).toEqual([["b", "absent"]]);
   });
+  it("treats a zero content fraction as an unusable diff, never NaN", () => {
+    expect(changedFraction([], 0)).toBe(Number.POSITIVE_INFINITY);
+    expect(validate(objects, [], [], image, 0)).toEqual({ ok: false, failures: [{ objectId: null, class: "background_altered", detail: "no comparable background pixels; the diff is unusable" }] });
+    // Located boxes still rescue it.
+    const r = validate(objects, [box(0.2, 0.2, 0.1, 0.1, "vision"), box(0.6, 0.6, 0.1, 0.1, "vision")], [{ candidate: 0, objectId: "a", confidence: 0.9 }, { candidate: 1, objectId: "b", confidence: 0.9 }], image, 0);
+    expect(r.ok).toBe(true);
+  });
   it("falls through to the per-object checks at 50% changed", () => {
     const r = validate(objects, [box(0.1, 0.1, 0.5, 1.0)], [{ candidate: 0, objectId: "a", confidence: 0.99 }], image);
     expect(r.ok).toBe(false);

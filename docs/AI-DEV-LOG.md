@@ -722,7 +722,7 @@ is waiting for them.
 
 ## Phase 4 — Generation: one frame, a game-aware prompt, a vision fallback
 
-Branch `phase-4/generation-fixed-frame`, five commits, one `image-pipeline` session.
+Branch `phase-4/generation-fixed-frame`, seven commits, one `image-pipeline` session.
 Brief: `.superpowers/p4/brief-fixed-frame.md` (not committed); design changes recorded in
 `docs/specs/2026-09-14-phase-2-imagegen-design.md` and SPEC §5.3.
 
@@ -805,14 +805,42 @@ Numbers: 202 unit tests (+18), line coverage 99.45 % (baseline 99.41), 0 clones,
 clean, 7 integration tests, 8 Playwright tests in paste mode. API spend for the session:
 6 compose and 8 vision calls against a budget of 20 and 40.
 
+### Addendum — the two problems the first run exposed
+
+The first real run left two things open: the model did not keep the photographed area
+where the diff's letterbox expected it (one region over 45 % of the frame, labelled as
+none of the objects), and the 60 % threshold was measured against the whole frame, so a
+portrait upload could be almost entirely re-rendered and still read as "usable".
+Commit `9081b99` closed both. The model now receives the background *already*
+letterboxed into the 4:3 frame — the same canvas the diff compares against — and, only
+when there are bands, a prompt line saying the flat grey bands are empty space to extend
+into while the photographed area stays exactly where it is. `changedFraction` divides by
+the mask's share of the frame, so cover is judged over the real content.
+
+The second real run of the user's case: 1200×896, content fraction 0.567, masked diff
+cover **0.000** — the photographed area stayed put and only the bands were filled. The
+diff found no candidate; `locate` placed the woman in an upstairs window at 2 % of the
+frame's width, confidence 0.98; validation passed on attempt 1. A probe on the same
+frames explained the zero: at the 512-pixel diff grid she is about 10×15 pixels and
+produces 38 changed pixels unblurred, 3 blurred, under the 98-pixel minimum area. The
+diff was not wrong; the object is below its resolution.
+
+The branch review then fixed the record-keeping around it (`run.ts` composed the queued
+row's prompt before the background's shape was known, so a thrown attempt on a portrait
+upload would have stored a prompt that was never sent — the row is now overwritten with
+the real prompt right after the images load, with an integration test on a 300×400
+background), made the frame geometry one pure function (`frameGeometry`, bands under 1 %
+of a side do not earn the prompt line), and guarded a zero content fraction so the diff
+reads as unusable rather than `NaN`. Seven commits, 211 unit tests, coverage 99.46 %.
+
 ### Where this leaves us
 
-A non-4:3 upload now produces a 4:3 game whose diff is honest about what it can and
-cannot see, and the vision fallback carries the cases it cannot. Two things to watch: the
-model does not keep the letterboxed content where the mask expects it when it extends a
-scene, so for such uploads the diff will usually read as "content re-composed" and the
-fallback will do the finding; and the 60 % threshold is measured against the whole frame,
-not the masked area, so a portrait upload's diff can be effectively unusable at 45 %.
+A non-4:3 upload now produces a 4:3 game whose diff compares like with like and is honest
+about what it sees. The real open item is the diff's floor: objects around 6 % of the
+width and larger are found by the diff; below that — the hidden-object case the master
+actually asked for — the vision fallback is the finder and the master's drag-to-confirm
+(§5.4) is the guard. Raising the diff grid or lowering its minimum area would move that
+floor, at the cost of re-tuning against the foliage noise the golden set showed.
 
 ---
 

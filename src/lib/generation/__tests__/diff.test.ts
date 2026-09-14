@@ -111,6 +111,10 @@ describe("diffRegions", () => {
     expect(rest).toEqual([]);
     expect(c.x).toBeCloseTo(0.2, 10);
     expect(c.w).toBeCloseTo(0.2, 10);
+    // With dilation the box still stops at the band: dilated pixels in the void are cut again.
+    const [dilated] = diffRegions(bg, straddling, 100, 100, { ...DIFF_DEFAULTS, dilations: 1 }, mask);
+    expect(dilated.x).toBeGreaterThanOrEqual(0.2);
+    expect(dilated.x + dilated.w).toBeLessThanOrEqual(0.8);
     // Without the mask the same change is one box starting in the band.
     expect(diffRegions(bg, straddling, 100, 100, { ...DIFF_DEFAULTS, dilations: 0 })[0].x).toBeCloseTo(0.1, 10);
   });

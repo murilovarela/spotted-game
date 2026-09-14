@@ -12,6 +12,8 @@ import { objectKey } from "@/lib/storage";
 import { MAX_GENERATION_ATTEMPTS } from "@/lib/types";
 import { attemptOnce } from "./attempt";
 import type { BackendSelection } from "./backend";
+import { frameGeometry } from "./boxes";
+import { dimensions } from "./images";
 import { composePrompt, formatAdjustments, formatFailures } from "./prompt";
 import { deriveGenerationState } from "./status";
 import type { Adjustment, GameInput } from "./types";
@@ -53,7 +55,10 @@ export async function startGeneration(
   });
 }
 
-async function loadGameInput(db: Database, gameId: string, deps: RunDeps): Promise<GameInput | null> {
+/** The loop's input plus what the prompt needs to know about the frame (`hasVoids`: letterbox bands to fill). */
+type LoadedGame = GameInput & { readonly hasVoids: boolean };
+
+async function loadGameInput(db: Database, gameId: string, deps: RunDeps): Promise<LoadedGame | null> {
   const [game] = await db.select().from(games).where(eq(games.id, gameId));
   if (!game || game.backgroundKey === null) return null;
   const objs = await objectRows(db, gameId);
@@ -64,6 +69,7 @@ async function loadGameInput(db: Database, gameId: string, deps: RunDeps): Promi
     generalPrompt: game.generalPrompt,
     background,
     objects: objs.map((o, i) => ({ id: o.id, label: o.label, prompt: o.prompt, requestedScale: o.requestedScale, sortOrder: o.sortOrder, image: images[i] })),
+    hasVoids: frameGeometry(await dimensions(background)).hasVoids,
   };
 }
 
@@ -116,6 +122,9 @@ export async function runGeneration(db: Database, gameId: string, firstRunId: st
     await finish(db, runId, startedAt, deps, { status: "failed", failureReason: `error: could not load the game's images (${loadError})` });
     return;
   }
+  // The queued row was composed before the background's shape was known; make it the prompt
+  // that will actually be sent, so a thrown attempt never leaves a prompt that never went out.
+  await db.update(generationRuns).set({ promptUsed: composePrompt(input, input.objects, []) }).where(eq(generationRuns.id, runId));
 
   let adjustments: readonly Adjustment[] = [];
   for (let attempt = 1; attempt <= MAX_GENERATION_ATTEMPTS; attempt++) {

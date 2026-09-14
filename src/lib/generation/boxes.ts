@@ -51,3 +51,22 @@ export function fitRect(content: ImageSize, frame: ImageSize): PixelRect {
   const h = Math.min(frame.height, Math.max(1, Math.round(content.height * scale)));
   return { x: Math.floor((frame.width - w) / 2), y: Math.floor((frame.height - h) / 2), w, h };
 }
+
+export type FrameGeometry = {
+  /** The output frame the background is letterboxed into, at native scale. */
+  readonly frame: ImageSize;
+  /** Where the real background lies in that frame, normalized. */
+  readonly content: Box;
+  /** True when a fill band is at least `VOID_MIN_FRACTION` of its side; rounding slivers do not count. */
+  readonly hasVoids: boolean;
+};
+const VOID_MIN_FRACTION = 0.01;
+
+/** How a background of `dims` sits in the fixed output frame; what the model is given and what the diff compares. */
+export function frameGeometry(dims: ImageSize): FrameGeometry {
+  const frame = outputFrameFor(dims);
+  const rect = fitRect(dims, frame);
+  const content = { x: rect.x / frame.width, y: rect.y / frame.height, w: rect.w / frame.width, h: rect.h / frame.height };
+  const hasVoids = 1 - content.w >= VOID_MIN_FRACTION || 1 - content.h >= VOID_MIN_FRACTION;
+  return { frame, content, hasVoids };
+}

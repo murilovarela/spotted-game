@@ -9,7 +9,7 @@ Approved in chat 2026-09-14. Argues from `docs/SPEC.md` §5.3, §5.4, §6.4–6.
 | Question | Choice | Alternatives rejected |
 | --- | --- | --- |
 | Job runner | Next `after()` inside a server action; page segment `maxDuration = 300`; polling via server action + `router.refresh()` | Vercel Queues/Inngest (vendor for durability we don't need); step-per-request (loop leaks into HTTP) |
-| Paste fallback | Full stand-in: composites, then runs the same diff → validate path | Minimal compositor that skips validation |
+| Paste fallback | Full stand-in: composites, then runs the same diff → validate path. Its `locate` answers with its own placements at confidence 1, so "a paste validation failure is a pipeline bug" holds for the diff path only | Minimal compositor that skips validation |
 | Golden set | Gemini-made scenes/objects generated once, committed | Own photos; seed fixtures only |
 | Gemini access | Real key during build; eval on demand; CI never calls Gemini (`GENERATION_MODE=paste`) | — |
 | Route handler | None — `src/app/api/generate` stays empty (CLAUDE.md: actions over routes) | POST + GET polling route |
@@ -22,13 +22,13 @@ Approved in chat 2026-09-14. Argues from `docs/SPEC.md` §5.3, §5.4, §6.4–6.
 | `prompt.ts` | yes | `composePrompt(game, objects, adjustments)`; `adjustmentFor(failure, object)` per SPEC §5.3 table |
 | `diff.ts` | yes | `diffRegions(bg, gen, w, h, opts = DIFF_DEFAULTS, mask?) → Candidate[]` over RGBA `Uint8Array`; pixels with `mask === 0` (letterbox fill) are never changed |
 | `validate.ts` | yes | SPEC predicate → `{ok:true, proposals} \| {ok:false, failures}` |
-| `boxes.ts` | yes | box→circle (aspect-aware radius in width units), overlap fraction, margin test, scale ratio, `outputFrameFor` (smallest 4:3 frame containing a size), `fitRect` (letterbox geometry) |
+| `boxes.ts` | yes | box→circle (aspect-aware radius in width units), overlap fraction, margin test, scale ratio, `outputFrameFor` (smallest 4:3 frame containing a size), `fitRect` (letterbox geometry), `frameGeometry` (frame + content rect + `hasVoids`, bands under 1 % of a side ignored) |
 | `status.ts` | yes | `deriveGenerationState(runs, now)` → `idle \| running \| passed \| failed{reason, attempts}`; `running` > 10 min ⇒ `failed: stale` |
 | `images.ts` | sharp | decode→RGBA, resize to dims (optionally Gaussian-blurred), downscale for diff (longest side ≤ 512), `letterboxTo` (fit into a frame on neutral grey + mask of real pixels), bound backend inputs (`downscale`: background ≤ 1536, object images ≤ 512 on the long side), crop, encode PNG |
 | `backend.ts` | — | `GenerationBackend { compose(input) → {png, width, height}; label(scene, candidates, objects) → VisionLabel[]; locate?(scene, objects) → Location[] }`; `backendFromEnv()` |
 | `gemini.ts` | I/O | `@google/genai`; `GEMINI_IMAGE_MODEL` (default `gemini-3.1-flash-image`), `GEMINI_VISION_MODEL` (default `gemini-3.6-flash` — `3.1-flash` does not exist, `2.5-flash` is retired); compose always requests `imageConfig { aspectRatio: "4:3", imageSize: "1K" }`; JSON-schema vision output for both `label` and `locate` (`box_2d` = [ymin, xmin, ymax, xmax] on a 0–1000 grid) |
-| `paste.ts` | placement pure, composite sharp | composites onto the background letterboxed to 4:3; seeded PRNG by `gameId`; placement confined to the real-background area, margin 10 %; no overlap; width = `(requestedScale ?? 0.06) × W`; `label` and `locate` = known boxes, confidence 1 |
-| `attempt.ts` | I/O-free given a backend | `attemptOnce(backend, input, adjustments) → AttemptOutcome` — bound inputs, compose, letterboxed + blurred diff, label (skipped when the changed regions exceed 60 % of the frame), locate for the objects still unresolved, validate; used by `run.ts` and the eval |
+| `paste.ts` | placement pure, composite sharp | composites onto the letterboxed 4:3 frame it is given; seeded PRNG by `gameId`; placement confined to the real-background area (`content`), margin 10 %; no overlap; width = `(requestedScale ?? 0.06) × W`; `label` and `locate` = known boxes, confidence 1 |
+| `attempt.ts` | I/O-free given a backend | `attemptOnce(backend, input, adjustments) → AttemptOutcome` — bound inputs, compose, letterboxed + blurred diff, label (skipped when the changed regions exceed 60 % of the supplied background, letterbox bands excluded), locate for the objects still unresolved, validate; used by `run.ts` and the eval |
 | `run.ts` | DB | `runGeneration(db, gameId, backend, deps)` — the loop, persists every attempt, `setGeneratedImage` on pass |
 | `actions.ts` | server | `startGenerationAction(gameId)` (polling is `router.refresh()` from the panel; no state action) |
 
@@ -80,7 +80,7 @@ One call: generated image + numbered candidate crops + named object thumbnails; 
 constrained to `[{candidate, objectId | null, confidence}]`. Vision never searches the
 frame for the diff's candidates. Threshold 0.6.
 
-Localisation fallback: when the diff is unusable (changed regions over 60 % of the frame)
+Localisation fallback: when the diff is unusable (changed regions over 60 % of the supplied background, letterbox bands excluded)
 or leaves an object with no label, `backend.locate` is asked where those objects are —
 scene + reference images, response constrained to `[{objectId, box_2d, confidence}]` in
 the documented 0–1000 `box_2d` format (`parseLocations`, pure). The boxes join the
@@ -90,7 +90,8 @@ validation; the master still confirms by dragging (SPEC §5.4). Evidence records
 
 ## Validation (SPEC §5.3, in order per object)
 
-Scene-level first: when the diff's merged candidates cover more than 60 % of the frame the
+Scene-level first: when the diff's merged candidates cover more than 60 % of the supplied
+background (letterbox bands excluded) the
 background was re-rendered (`background_altered`); the crops are not labelled, and that
 single failure stands only if the localisation fallback found nothing — otherwise the
 per-object checks run over the located boxes. Then, per object:

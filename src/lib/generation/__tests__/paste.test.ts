@@ -10,25 +10,26 @@ async function solid(width: number, height: number, rgb: [number, number, number
 }
 
 describe("paste backend", () => {
-  it("composites onto the background letterboxed to 4:3, inside the real area, and labels the matching candidates", async () => {
+  it("composites onto the letterboxed frame it is given, inside the real area, and labels the matching candidates", async () => {
     const background = await solid(200, 100, [120, 120, 120]);
+    // The pipeline hands the backend the background already letterboxed to 4:3, plus where the real pixels are.
+    const boxed = await letterboxTo(background, { width: 200, height: 150 });
+    const content = { x: 0, y: 1 / 6, w: 1, h: 2 / 3 };
     const sprite = await solid(10, 10, [255, 0, 0]);
     const game = {
       id: "11111111-1111-4111-8111-111111111111",
       title: "t",
       generalPrompt: "",
-      background,
+      background: boxed.png,
       objects: [
         { id: "a", label: "A", prompt: "", requestedScale: 0.1, sortOrder: 0, image: sprite },
         { id: "b", label: "B", prompt: "", requestedScale: 0.1, sortOrder: 1, image: sprite },
       ],
     };
     const backend = createPasteBackend();
-    const scene = await backend.compose({ ...game, prompt: "ignored", content: { x: 0, y: 1 / 6, w: 1, h: 2 / 3 } });
-    // 200×100 is wider than 4:3: the frame keeps the width and adds bands top and bottom.
+    const scene = await backend.compose({ ...game, prompt: "ignored", content });
     expect(scene).toMatchObject({ width: 200, height: 150 });
     expect(await dimensions(scene.png)).toEqual({ width: 200, height: 150 });
-    const boxed = await letterboxTo(background, { width: 200, height: 150 });
     const bg = await decodeRGBA(boxed.png);
     const gen = await decodeRGBA(scene.png);
     const candidates = diffRegions(bg.data, gen.data, 200, 150, undefined, boxed.mask);

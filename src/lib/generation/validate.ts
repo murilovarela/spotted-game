@@ -20,6 +20,7 @@ export type ValidatableObject = { readonly id: string; readonly label: string; r
  * re-rendered even when its bands make it a minority of the frame.
  */
 export function changedFraction(candidates: readonly Candidate[], contentFraction = 1): number {
+  if (contentFraction <= 0) return Number.POSITIVE_INFINITY; // nothing comparable: unusable, never NaN
   return candidates.reduce((sum, c) => (c.source === "diff" ? sum + c.area : sum), 0) / contentFraction;
 }
 
@@ -32,8 +33,8 @@ export function validate(
 ): ValidationResult {
   const changed = changedFraction(candidates, contentFraction);
   if (changed > MAX_CHANGED_FRACTION && !candidates.some((c) => c.source === "vision")) {
-    const pct = Math.round(changed * 100);
-    return { ok: false, failures: [{ objectId: null, class: "background_altered", detail: `changed regions cover ${pct}% of the background; it was re-rendered` }] };
+    const detail = Number.isFinite(changed) ? `changed regions cover ${Math.round(changed * 100)}% of the background; it was re-rendered` : "no comparable background pixels; the diff is unusable";
+    return { ok: false, failures: [{ objectId: null, class: "background_altered", detail }] };
   }
 
   const failures: Failure[] = [];

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fitRect, insideMargin, outputFrameFor, overlapFraction, scaleRatio, toCircle } from "../boxes";
+import { fitRect, frameGeometry, insideMargin, outputFrameFor, overlapFraction, scaleRatio, toCircle } from "../boxes";
 
 const image = { width: 1000, height: 500 };
 
@@ -78,5 +78,27 @@ describe("fitRect", () => {
   });
   it("centres a wide image with top and bottom bands", () => {
     expect(fitRect({ width: 1920, height: 1080 }, { width: 1024, height: 768 })).toEqual({ x: 0, y: 96, w: 1024, h: 576 });
+  });
+});
+
+describe("frameGeometry", () => {
+  it("is the whole frame with no voids for a 4:3 image", () => {
+    expect(frameGeometry({ width: 1024, height: 768 })).toEqual({ frame: { width: 1024, height: 768 }, content: { x: 0, y: 0, w: 1, h: 1 }, hasVoids: false });
+  });
+  it("reports voids and the content rect for a portrait image", () => {
+    const g = frameGeometry({ width: 424, height: 538 });
+    expect(g.frame).toEqual({ width: 718, height: 538 });
+    expect(g.content).toEqual({ x: 147 / 718, y: 0, w: 424 / 718, h: 1 });
+    expect(g.hasVoids).toBe(true);
+  });
+  it("ignores rounding bands under 1% of a side", () => {
+    // 1024×769 → frame 1026×769: a 2px band, 0.2% of the width — not worth a prompt line.
+    const g = frameGeometry({ width: 1024, height: 769 });
+    expect(g.frame).toEqual({ width: 1026, height: 769 });
+    expect(g.hasVoids).toBe(false);
+    // 896×669 (the golden set) → 896×672: 3px of 672.
+    expect(frameGeometry({ width: 896, height: 669 }).hasVoids).toBe(false);
+    // Exactly 1% counts.
+    expect(frameGeometry({ width: 990, height: 750 }).hasVoids).toBe(true); // frame 1000×750: 10px of 1000
   });
 });
