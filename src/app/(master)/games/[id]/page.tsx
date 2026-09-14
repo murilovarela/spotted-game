@@ -6,6 +6,7 @@ import { loadGameForMasterById } from "@/lib/games/queries";
 import { MAX_OBJECTS_PER_GAME } from "@/lib/types";
 import { AddObjectForm } from "./add-object-form";
 import { AuthorCanvas } from "./author-canvas";
+import { masterErrorCopy } from "./error-copy";
 import { ObjectRow } from "./object-row";
 import { redirectBack } from "./redirect-back";
 import { UploadField } from "./upload-field";
@@ -18,7 +19,8 @@ export default async function EditGamePage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ error?: string }>;
 }) {
-  const [{ id }, { error }] = await Promise.all([params, searchParams]);
+  const [{ id }, { error: errorCode }] = await Promise.all([params, searchParams]);
+  const error = masterErrorCopy(errorCode);
   const user = await getCurrentUser();
   if (!user) redirect("/sign-in");
   const game = await loadGameForMasterById(getDb(), id, user.id, new Date());

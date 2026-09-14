@@ -20,6 +20,8 @@ export default defineConfig({
         "src/components/canvas/geometry.ts",
         "src/components/canvas/marker-state.ts",
         "src/components/canvas/format.ts",
+        // `?error=` code → fixed copy (Phase 3 final review): pure, fully unit-tested.
+        "src/app/g/[publicId]/error-copy.ts",
       ],
       exclude: [
         "**/__tests__/**",

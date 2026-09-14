@@ -20,15 +20,17 @@ export function StartScreen({
   title: string;
   objects: readonly ObjectThumbnail[];
   signedIn: boolean;
-  error?: string;
+  /** Already resolved to fixed copy by the page; never raw query text. */
+  error: string | null;
 }) {
   async function start() {
     "use server";
     const r = await startAttemptAction(publicId);
-    redirect(`/g/${publicId}${r.ok ? "" : `?error=${encodeURIComponent(r.message)}`}`);
+    // Carry the code, not the message: the page maps it to fixed copy (error-copy.ts).
+    redirect(`/g/${publicId}${r.ok ? "" : `?error=${r.error}`}`);
   }
   return (
-    <main className="mx-auto flex max-w-3xl flex-col gap-6 p-6">
+    <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-6">
       <h1 className="text-2xl font-semibold">{title}</h1>
       {error && (
         <p role="alert" className="rounded bg-red-50 p-2 text-red-700">

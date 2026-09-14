@@ -3,6 +3,7 @@ import { getDb } from "@/db";
 import { getCurrentUser } from "@/lib/auth";
 import { getLeaderboardAction, getPlayerStateAction } from "@/lib/games/actions";
 import { loadGameForViewer } from "@/lib/games/queries";
+import { errorCopy } from "./error-copy";
 import { FinishedScreen } from "./finished-screen";
 import { PlayScreen } from "./play-screen";
 import { ResultScreen } from "./result-screen";
@@ -40,7 +41,7 @@ export default async function GamePage({
 
   switch (attempt.kind) {
     case "not_started":
-      return <StartScreen {...common} signedIn={user !== null} error={error} />;
+      return <StartScreen {...common} signedIn={user !== null} error={errorCopy(error)} />;
     case "in_progress":
       return <PlayScreen {...common} image={view.image} startedAtMs={attempt.startedAt.getTime()} serverNowMs={now.getTime()} />;
     case "submitted": {
