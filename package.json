@@ -17,7 +17,8 @@
     "lint:dup": "jscpd src/",
     "db:migrate": "drizzle-kit migrate",
     "test:integration": "vitest run --config vitest.integration.config.ts",
-    "seed": "tsx src/db/seed/index.ts"
+    "seed": "tsx src/db/seed/index.ts",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1131.0",
@@ -33,6 +34,8 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@clerk/backend": "^3.17.2",
+    "@clerk/testing": "^2.2.34",
     "@next/env": "^16.3.5",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
