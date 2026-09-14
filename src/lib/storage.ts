@@ -63,6 +63,13 @@ export async function putObject(key: string, contentType: string, body: Uint8Arr
   await s3().send(new PutObjectCommand({ Bucket: BUCKET, Key: key, ContentType: contentType, Body: body }));
 }
 
+/** Server-side read (generation needs the background and object bytes). */
+export async function getObject(key: string): Promise<Uint8Array> {
+  const r = await s3().send(new GetObjectCommand({ Bucket: BUCKET, Key: key }));
+  if (!r.Body) throw new Error(`storage: empty body for ${key}`);
+  return r.Body.transformToByteArray();
+}
+
 /** Presign a set of keys up front so a synchronous `resolveUrl` can be given to `projectGame`. */
 export async function urlResolverFor(keys: readonly (string | null)[]): Promise<(key: string) => string> {
   const unique = [...new Set(keys.filter((k): k is string => k !== null))];
