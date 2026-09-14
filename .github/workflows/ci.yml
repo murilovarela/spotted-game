@@ -322,6 +322,7 @@ jobs:
           NEXT_PUBLIC_CLERK_SIGN_UP_URL: /sign-up
           NEXT_PUBLIC_APP_URL: http://localhost:3000
           E2E_CLERK_USER_ID: ${{ secrets.E2E_CLERK_USER_ID }}
+          GENERATION_MODE: paste
         run: |
           npm run test:e2e
           echo "status=pass" >> "$GITHUB_OUTPUT"

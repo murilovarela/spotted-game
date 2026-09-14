@@ -3,14 +3,19 @@ import { getDb } from "@/db";
 import { getCurrentUser } from "@/lib/auth";
 import { addObjectAction, publishGameAction, setWindowAction, unpublishGameAction, updateGameAction } from "@/lib/games/actions";
 import { loadGameForMasterById } from "@/lib/games/queries";
+import { deriveGenerationState } from "@/lib/generation/status";
 import { MAX_OBJECTS_PER_GAME } from "@/lib/types";
 import { AddObjectForm } from "./add-object-form";
 import { AuthorCanvas } from "./author-canvas";
 import { masterErrorCopy } from "./error-copy";
+import { GenerationPanel } from "./generation-panel";
 import { ObjectRow } from "./object-row";
 import { redirectBack } from "./redirect-back";
 import { UploadField } from "./upload-field";
 import { WindowFields } from "./window-fields";
+
+// Server actions from this page — the generation loop runs in `after()` — may take up to 5 minutes.
+export const maxDuration = 300;
 
 export default async function EditGamePage({
   params,
@@ -26,6 +31,7 @@ export default async function EditGamePage({
   const game = await loadGameForMasterById(getDb(), id, user.id, new Date());
   if (!game) notFound();
   const editable = game.status === "draft";
+  const generation = deriveGenerationState(game.generationRuns, new Date());
 
   async function saveBackground(key: string) {
     "use server";
@@ -86,6 +92,13 @@ export default async function EditGamePage({
         )}
         {editable && <UploadField gameId={id} kind="background" label="Upload background" onUploaded={saveBackground} />}
       </section>
+
+      {editable && (
+        <section>
+          <h2 className="mb-2 font-medium">Generation</h2>
+          <GenerationPanel gameId={id} state={generation} runs={game.generationRuns} canGenerate={game.backgroundUrl !== null && game.objects.length > 0} />
+        </section>
+      )}
 
       {game.image && (
         <section>

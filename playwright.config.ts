@@ -25,5 +25,10 @@ export default defineConfig({
     url: "http://localhost:3000",
     reuseExistingServer: !CI,
     timeout: 240_000,
+    // E2E never calls Gemini: the paste backend composites deterministically. Playwright merges
+    // this over process.env. Locally, `reuseExistingServer` means an already-running dev server
+    // keeps its own mode — start the suite with no dev server on :3000 when exercising
+    // generate.spec.ts.
+    env: { GENERATION_MODE: "paste" },
   },
 });
