@@ -72,7 +72,9 @@ async function author(db: Database, master: User, title: string, confirmAll: boo
 
 async function schedule(db: Database, master: User, ref: Ref, window: Window, publish: boolean): Promise<void> {
   if (!window) return;
-  const now = new Date(window.startsAt.getTime() - HOUR); // validation needs starts_at ≥ now
+  // Only windows already in the past need the shift (so starts_at ≥ now for validation);
+  // clamp to the real clock otherwise, so published_at/updated_at are never in the future.
+  const now = new Date(Math.min(Date.now(), window.startsAt.getTime() - HOUR));
   must(await setWindow(db, master, ref.id, window, now), "window");
   if (publish) must(await publishGame(db, master, ref.id, now), "publish");
 }

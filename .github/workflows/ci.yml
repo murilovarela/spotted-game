@@ -286,11 +286,16 @@ jobs:
         shell: bash
         env:
           DB: ${{ secrets.TEST_DATABASE_URL }}
+          DB_UNPOOLED: ${{ secrets.TEST_DATABASE_URL_UNPOOLED }}
           AWS: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_ENDPOINT: ${{ secrets.AWS_ENDPOINT_URL_S3 }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
           CLERK: ${{ secrets.CLERK_SECRET_KEY }}
           PK: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
         run: |
-          if [ -n "$DB" ] && [ -n "$AWS" ] && [ -n "$CLERK" ] && [ -n "$PK" ]; then
+          if [ -n "$DB" ] && [ -n "$DB_UNPOOLED" ] && [ -n "$AWS" ] && [ -n "$AWS_SECRET" ] && \
+             [ -n "$AWS_ENDPOINT" ] && [ -n "$AWS_REGION" ] && [ -n "$CLERK" ] && [ -n "$PK" ]; then
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
             echo "present=false" >> "$GITHUB_OUTPUT"
@@ -331,7 +336,7 @@ jobs:
         if: steps.secrets.outputs.present == 'false'
         shell: bash
         run: |
-          echo "::warning::E2E skipped: needs TEST_DATABASE_URL, AWS_*, NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY, CLERK_SECRET_KEY"
+          echo "::warning::E2E skipped: needs TEST_DATABASE_URL, TEST_DATABASE_URL_UNPOOLED, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_ENDPOINT_URL_S3, AWS_REGION, NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY, CLERK_SECRET_KEY"
           echo "status=skipped" >> "$GITHUB_OUTPUT"
 
   report:
