@@ -24,6 +24,12 @@ test("plays a seeded game to a scored submission", async ({ page }) => {
   await expect(page.getByText(/does not pause/)).toBeVisible();
   await expect(page.getByTestId("object-rail").locator("li")).toHaveCount(3);
   await expect(page.getByTestId("marker-canvas")).toHaveCount(0);
+  // Drain: a response landing while an earlier batch is awaited is still checked.
+  let n = 0;
+  while (n < checks.length) {
+    n = checks.length;
+    await Promise.all(checks);
+  }
   expect((await Promise.all(checks)).filter(Boolean), "generated image reached the client before Start").toEqual([]);
 
   started = true;
@@ -31,6 +37,9 @@ test("plays a seeded game to a scored submission", async ({ page }) => {
   const canvas = page.getByTestId("marker-canvas");
   await expect(canvas).toBeVisible();
   await expect(page.getByTestId("timer")).toBeVisible();
+  // SPEC §8: thumbnails stay visible throughout play; the leaderboard is hidden until submission.
+  await expect(page.getByTestId("object-rail").locator("li")).toHaveCount(3);
+  await expect(page.getByTestId("leaderboard")).toHaveCount(0);
   await settled(canvas);
   const markers = page.getByTestId("marker");
   const submit = page.getByTestId("submit");
@@ -63,11 +72,16 @@ test("plays a seeded game to a scored submission", async ({ page }) => {
   await expect(markers).toHaveCount(3);
 
   // Submit is confirmed, and the response carries no coordinates.
-  const submitResponse = page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes(url));
   await submit.click();
   await expect(page.getByTestId("confirm-submit")).toBeVisible();
+  // Bound to the confirm click and narrowed to a server action so no other POST can satisfy it.
+  const submitResponse = page.waitForResponse(
+    (r) => r.request().method() === "POST" && r.url().includes(url) && r.request().headers()["next-action"] !== undefined,
+  );
   await page.getByTestId("confirm-submit-yes").click();
-  const body = await (await submitResponse).text();
+  const response = await submitResponse;
+  expect(response.status()).toBe(200);
+  const body = await response.text();
   expect(body).not.toMatch(/"radius"|"x":\s*0\./);
 
   await expect(page.getByTestId("result")).toContainText("Found 3 of 3");
