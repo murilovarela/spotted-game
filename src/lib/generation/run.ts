@@ -3,7 +3,7 @@
  * before the backend is called and is finalized on every path, thrown errors included —
  * this table is the project's autonomous-loop evidence.
  */
-import { asc, eq, max } from "drizzle-orm";
+import { and, asc, eq, max } from "drizzle-orm";
 import type { Database } from "@/db";
 import { games, generationRuns, objects, type User } from "@/db/schema";
 import { setGeneratedImage } from "@/lib/games/games";
@@ -67,7 +67,14 @@ async function loadGameInput(db: Database, gameId: string, deps: RunDeps): Promi
   };
 }
 
-type Finish = { status: "passed" | "failed"; failureReason?: string | null; adjustment?: string | null; visionResponse?: unknown };
+type Finish = {
+  status: "passed" | "failed";
+  failureReason?: string | null;
+  adjustment?: string | null;
+  visionResponse?: unknown;
+  /** Exactly what was sent to the backend; omitted when the attempt never reached it. */
+  promptUsed?: string;
+};
 
 async function finish(db: Database, runId: string, startedAt: Date, deps: RunDeps, f: Finish): Promise<void> {
   const now = deps.now();
@@ -78,6 +85,7 @@ async function finish(db: Database, runId: string, startedAt: Date, deps: RunDep
       failureReason: f.failureReason ?? null,
       adjustment: f.adjustment ?? null,
       visionResponse: f.visionResponse ?? null,
+      ...(f.promptUsed === undefined ? {} : { promptUsed: f.promptUsed }),
       finishedAt: now,
       durationMs: now.getTime() - startedAt.getTime(),
     })
@@ -87,18 +95,25 @@ async function finish(db: Database, runId: string, startedAt: Date, deps: RunDep
 export async function runGeneration(db: Database, gameId: string, firstRunId: string, selection: BackendSelection, deps: RunDeps): Promise<void> {
   let runId = firstRunId;
   let startedAt = deps.now();
-  await db.update(generationRuns).set({ status: "running", startedAt }).where(eq(generationRuns.id, runId));
+  // Only a queued row may start a loop: a late or duplicate `after()` must not run a second one.
+  const claimed = await db
+    .update(generationRuns)
+    .set({ status: "running", startedAt })
+    .where(and(eq(generationRuns.id, runId), eq(generationRuns.status, "queued")))
+    .returning({ id: generationRuns.id });
+  if (claimed.length === 0) return;
 
   if (!selection.ok) {
     await finish(db, runId, startedAt, deps, { status: "failed", failureReason: selection.reason });
     return;
   }
+  let loadError = "game or background missing";
   const input = await loadGameInput(db, gameId, deps).catch((e: unknown) => {
-    void e;
+    loadError = e instanceof Error ? e.message : String(e);
     return null;
   });
   if (!input) {
-    await finish(db, runId, startedAt, deps, { status: "failed", failureReason: "error: could not load the game's images" });
+    await finish(db, runId, startedAt, deps, { status: "failed", failureReason: `error: could not load the game's images (${loadError})` });
     return;
   }
 
@@ -121,10 +136,10 @@ export async function runGeneration(db: Database, gameId: string, firstRunId: st
       if (outcome.result.ok) {
         const set = await setGeneratedImage(db, gameId, { key: imageKey, width: outcome.image.width, height: outcome.image.height }, outcome.result.proposals);
         if (!set.ok) {
-          await finish(db, runId, startedAt, deps, { status: "failed", failureReason: `error: ${set.message}`, visionResponse: evidence });
+          await finish(db, runId, startedAt, deps, { status: "failed", failureReason: `error: ${set.message}`, visionResponse: evidence, promptUsed: outcome.prompt });
           return;
         }
-        await finish(db, runId, startedAt, deps, { status: "passed", visionResponse: evidence });
+        await finish(db, runId, startedAt, deps, { status: "passed", visionResponse: evidence, promptUsed: outcome.prompt });
         return;
       }
       await finish(db, runId, startedAt, deps, {
@@ -132,6 +147,7 @@ export async function runGeneration(db: Database, gameId: string, firstRunId: st
         failureReason: formatFailures(outcome.result.failures, input.objects),
         adjustment: formatAdjustments(outcome.added),
         visionResponse: evidence,
+        promptUsed: outcome.prompt,
       });
       adjustments = outcome.adjustments;
     } catch (e: unknown) {

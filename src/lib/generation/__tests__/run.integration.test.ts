@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestDb, truncateAll } from "@/db/test";
 import { games, generationRuns, objects, users, type User } from "@/db/schema";
-import { addObject, createGame, updateGame } from "@/lib/games/games";
+import { addObject, confirmObject, createGame, publishGame, setWindow, updateGame } from "@/lib/games/games";
 import { MAX_GENERATION_ATTEMPTS, normalized } from "@/lib/types";
 import type { GenerationBackend } from "../backend";
 import { createPasteBackend } from "../paste";
@@ -53,6 +53,23 @@ describe("startGeneration", () => {
     const g = await createGame(db, master, { title: "g", generalPrompt: "" });
     if (!g.ok) throw new Error();
     expect((await startGeneration(db, master, g.data.id, new Date())).ok).toBe(false);
+
+    // A published game: generate for real, confirm every object, set a window, publish.
+    const id = await draft(master);
+    const started = await startGeneration(db, master, id, new Date());
+    if (!started.ok) throw new Error(started.message);
+    await runGeneration(db, id, started.data.runId, { ok: true, backend: createPasteBackend() }, deps);
+    for (const o of await db.select().from(objects).where(eq(objects.gameId, id))) {
+      const c = await confirmObject(db, master, o.id);
+      if (!c.ok) throw new Error(c.message);
+    }
+    const startsAt = new Date(Date.now() + 60 * 60_000);
+    const now = new Date(startsAt.getTime() - 60 * 60_000);
+    const w = await setWindow(db, master, id, { startsAt, endsAt: new Date(startsAt.getTime() + 60 * 60_000) }, now);
+    if (!w.ok) throw new Error(w.message);
+    const p = await publishGame(db, master, id, now);
+    if (!p.ok) throw new Error(p.message);
+    expect(await startGeneration(db, master, id, new Date())).toMatchObject({ ok: false, error: "NOT_DRAFT" });
   });
   it("inserts a queued run with the composed prompt and refuses a second start while one is running", async () => {
     const id = await draft(master);
@@ -101,6 +118,13 @@ describe("runGeneration", () => {
       expect(o.radius).not.toBeNull();
       expect(o.confirmed).toBe(false);
     }
+
+    // A late or duplicate `after()` must not start a second loop on a row that is no longer queued.
+    await runGeneration(db, id, started.data.runId, { ok: true, backend: createPasteBackend() }, deps);
+    const rows = await db.select().from(generationRuns).where(eq(generationRuns.gameId, id));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe("passed");
+    expect(rows[0].promptUsed).toBe(run.promptUsed);
   });
 
   it("with a backend whose labels never match: three failed rows with reasons and adjustments, then stops; image untouched", async () => {
@@ -118,6 +142,11 @@ describe("runGeneration", () => {
     // attempt 2's prompt carries attempt 1's adjustment; attempt 3 adds nothing new (deduped)
     expect(runs[1].promptUsed).toContain("Adjustment: Place the Object 0");
     expect(runs[2].adjustment).toBeNull();
+    for (const r of runs) {
+      expect(r.finishedAt).not.toBeNull();
+      expect(r.durationMs).toBeGreaterThanOrEqual(0);
+      expect(r.visionResponse).toMatchObject({ width: 1024, height: 768 });
+    }
     const [game] = await db.select().from(games).where(eq(games.id, id));
     expect(game.generatedImageKey).toBeNull();
   });
@@ -130,6 +159,9 @@ describe("runGeneration", () => {
     const [run] = await db.select().from(generationRuns).where(eq(generationRuns.gameId, id));
     expect(run.status).toBe("failed");
     expect(run.failureReason).toBe("config: GEMINI_API_KEY not set");
+    expect(run.finishedAt).not.toBeNull();
+    expect(run.durationMs).toBeGreaterThanOrEqual(0);
+    expect(run.visionResponse).toBeNull();
   });
 
   it("records a thrown backend error on the row and stops", async () => {
@@ -142,5 +174,8 @@ describe("runGeneration", () => {
     expect(runs).toHaveLength(1);
     expect(runs[0].status).toBe("failed");
     expect(runs[0].failureReason).toBe("error: quota exceeded");
+    expect(runs[0].finishedAt).not.toBeNull();
+    expect(runs[0].durationMs).toBeGreaterThanOrEqual(0);
+    expect(runs[0].visionResponse).toBeNull();
   });
 });

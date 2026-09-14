@@ -17,7 +17,13 @@ export async function startGenerationAction(gameId: string): Promise<ActionResul
   const started = await startGeneration(getDb(), user, gameId, new Date());
   if (!started.ok) return started;
   after(async () => {
-    await runGeneration(getDb(), gameId, started.data.runId, backendFromEnv(), { now: () => new Date(), getObject, putObject });
+    try {
+      await runGeneration(getDb(), gameId, started.data.runId, backendFromEnv(), { now: () => new Date(), getObject, putObject });
+    } catch (error: unknown) {
+      // The loop finalizes its own row on every path; this catches only failures outside it
+      // (e.g. the finalizing write itself), so the host logs show why a row went stale.
+      console.error("generation loop failed", { gameId, error });
+    }
     revalidatePath(`/games/${gameId}`);
   });
   revalidatePath(`/games/${gameId}`);
