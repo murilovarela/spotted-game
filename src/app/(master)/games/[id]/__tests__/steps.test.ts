@@ -50,6 +50,12 @@ describe("deriveSteps", () => {
     expect(deriveSteps(game({ image: null })).find((s) => s.key === "generate")?.done).toBe(false);
     expect(deriveSteps(game({ endsAt: null })).find((s) => s.key === "window")?.done).toBe(false);
   });
+  it("positions hint reports what's left: unplaced, then unconfirmed, then done", () => {
+    const hint = (o: ObjectForMaster) => deriveSteps(game({ objects: [o] })).find((s) => s.key === "positions")?.hint;
+    expect(hint(obj({ x: null, y: null, radius: null }))).toBe("1 not placed yet.");
+    expect(hint(obj({ confirmed: false }))).toBe("1 to confirm.");
+    expect(hint(obj())).toBe("Every circle checked.");
+  });
 });
 
 describe("publishBlockers", () => {
@@ -66,5 +72,8 @@ describe("publishBlockers", () => {
   });
   it("asks for objects when there are none", () => {
     expect(publishBlockers(game({ objects: [] }))).toEqual(["Add at least one object"]);
+  });
+  it("singularizes the count when exactly one object is unconfirmed", () => {
+    expect(publishBlockers(game({ objects: [obj({ confirmed: false })] }))).toEqual(["Confirm 1 object"]);
   });
 });
