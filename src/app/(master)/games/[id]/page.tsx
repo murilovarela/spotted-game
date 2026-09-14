@@ -5,6 +5,7 @@ import { addObjectAction, publishGameAction, setWindowAction, unpublishGameActio
 import { loadGameForMasterById } from "@/lib/games/queries";
 import { MAX_OBJECTS_PER_GAME } from "@/lib/types";
 import { AddObjectForm } from "./add-object-form";
+import { AuthorCanvas } from "./author-canvas";
 import { ObjectRow } from "./object-row";
 import { redirectBack } from "./redirect-back";
 import { UploadField } from "./upload-field";
@@ -80,6 +81,13 @@ export default async function EditGamePage({
         )}
         {editable && <UploadField gameId={id} kind="background" label="Upload background" onUploaded={saveBackground} />}
       </section>
+
+      {game.image && (
+        <section>
+          <h2 className="mb-2 font-medium">Positions</h2>
+          <AuthorCanvas gameId={id} image={game.image} objects={game.objects} editable={editable} />
+        </section>
+      )}
 
       <section>
         <h2 className="mb-2 font-medium">

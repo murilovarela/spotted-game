@@ -88,9 +88,14 @@ export function MarkerCanvas(props: MarkerCanvasProps) {
     if (!drag) return;
     const m = find(drag.id);
     if (m) {
-      if (drag.kind === "handle") props.onResize?.(m.id, radiusFromHandle({ x: m.x, y: m.y }, drag.point, image));
-      else if (mode === "play" && over(trashRef?.current, e.clientX, e.clientY)) props.onRemove?.(m.id);
-      else props.onMove?.(m.id, drag.point);
+      if (drag.kind === "handle") {
+        const radius = radiusFromHandle({ x: m.x, y: m.y }, drag.point, image);
+        if (radius !== m.radius) props.onResize?.(m.id, radius);
+      } else if (mode === "play" && over(trashRef?.current, e.clientX, e.clientY)) {
+        props.onRemove?.(m.id);
+      } else if (drag.point.x !== m.x || drag.point.y !== m.y) {
+        props.onMove?.(m.id, drag.point);
+      }
     }
     setDrag(null);
     setOverTrash(false);
