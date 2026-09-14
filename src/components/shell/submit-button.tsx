@@ -8,11 +8,12 @@ import { Button } from "@/components/ui/button";
 export function SubmitButton({
   children,
   pendingLabel,
-  ...props
+  disabled,
+  ...rest
 }: React.ComponentProps<typeof Button> & { pendingLabel?: string }) {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" disabled={pending || props.disabled} {...props}>
+    <Button type="submit" disabled={pending || disabled} {...rest}>
       {pending && <Loader2 className="animate-spin" aria-hidden />}
       {pending && pendingLabel ? pendingLabel : children}
     </Button>
