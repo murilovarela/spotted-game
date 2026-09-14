@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveGenerationState } from "../status";
+import { deriveGenerationState, STALE_REASON } from "../status";
 
 const t = (min: number) => new Date(Date.UTC(2026, 8, 14, 12, min));
 const run = (attemptNumber: number, status: "queued" | "running" | "passed" | "failed", startedMin: number, failureReason: string | null = null) => ({
@@ -36,5 +36,21 @@ describe("deriveGenerationState", () => {
   });
   it("orders by attempt number regardless of input order", () => {
     expect(deriveGenerationState([run(2, "passed", 2), run(1, "failed", 0, "x")], t(9)).kind).toBe("passed");
+  });
+  it("counts the stale run inside the trailing failed streak", () => {
+    expect(deriveGenerationState([run(1, "failed", 0, "x"), run(2, "failed", 2, "y"), run(3, "running", 4)], t(20))).toEqual({
+      kind: "failed",
+      attemptNumber: 3,
+      reason: STALE_REASON,
+      attempts: 3,
+    });
+  });
+  it("counts stale run after passed as a single failure", () => {
+    expect(deriveGenerationState([run(1, "passed", 0), run(2, "running", 2)], t(20))).toEqual({
+      kind: "failed",
+      attemptNumber: 2,
+      reason: STALE_REASON,
+      attempts: 1,
+    });
   });
 });

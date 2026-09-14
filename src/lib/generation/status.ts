@@ -18,18 +18,22 @@ export type GenerationState =
 
 export const STALE_REASON = "stale: the generation was cut off before it finished";
 
+function trailingFailures(sorted: readonly RunLike[], fromIndex: number): number {
+  let count = 0;
+  for (let i = fromIndex; i >= 0 && sorted[i].status === "failed"; i--) count++;
+  return count;
+}
+
 export function deriveGenerationState(runs: readonly RunLike[], now: Date): GenerationState {
   const sorted = [...runs].sort((a, b) => a.attemptNumber - b.attemptNumber);
   const latest = sorted.at(-1);
   if (!latest) return { kind: "idle" };
   if (latest.status === "running" || latest.status === "queued") {
     if (now.getTime() - latest.startedAt.getTime() > STALE_AFTER_MS) {
-      return { kind: "failed", attemptNumber: latest.attemptNumber, reason: STALE_REASON, attempts: 1 };
+      return { kind: "failed", attemptNumber: latest.attemptNumber, reason: STALE_REASON, attempts: 1 + trailingFailures(sorted, sorted.length - 2) };
     }
     return { kind: "running", attemptNumber: latest.attemptNumber, startedAt: latest.startedAt };
   }
   if (latest.status === "passed") return { kind: "passed", attemptNumber: latest.attemptNumber, finishedAt: latest.finishedAt };
-  let attempts = 0;
-  for (let i = sorted.length - 1; i >= 0 && sorted[i].status === "failed"; i--) attempts++;
-  return { kind: "failed", attemptNumber: latest.attemptNumber, reason: latest.failureReason ?? "unknown", attempts };
+  return { kind: "failed", attemptNumber: latest.attemptNumber, reason: latest.failureReason ?? "unknown", attempts: 1 + trailingFailures(sorted, sorted.length - 2) };
 }
