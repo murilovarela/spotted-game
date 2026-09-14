@@ -75,9 +75,10 @@ play flows; and an on-demand generation eval against a golden set. `npm run veri
 (typecheck + lint + unit) is what the local `Stop` hook runs and must be green before a
 turn ends.
 
-CI (`.github/workflows/ci.yml`) runs eight jobs in parallel on every pull request: lint,
-typecheck, test (with coverage), secrets (gitleaks), audit (`npm audit`), duplication
-(jscpd), security (semgrep `p/security-audit`), and unused (knip). Each numeric job
+CI (`.github/workflows/ci.yml`) runs ten gate jobs on every pull request and on every push
+to `main`: lint, typecheck, test (with coverage), secrets (gitleaks), audit (`npm audit`),
+duplication (jscpd), security (semgrep `p/security-audit`), and unused (knip) in parallel,
+then integration (against a Neon branch) and e2e (Playwright) in sequence. Each numeric job
 compares against a floor or ceiling in `quality-baseline.json` and fails if the current
 run is worse than the baseline — a ratchet, not a fixed threshold. After a fully green run
 on `main`, `update-baseline` rewrites `quality-baseline.json` with the measured values and

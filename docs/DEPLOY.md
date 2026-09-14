@@ -15,8 +15,8 @@ scope, before the first deploy that needs them.
 
 | Variable | Value / where it comes from |
 | --- | --- |
-| `DATABASE_URL` | Neon **main** branch, pooled connection string |
-| `DATABASE_URL_UNPOOLED` | Neon **main** branch, direct (unpooled) connection string |
+| `DATABASE_URL` | Neon **main** branch, pooled connection string (currently the dev branch — see §4) |
+| `DATABASE_URL_UNPOOLED` | Same branch as `DATABASE_URL`, direct (unpooled) connection string |
 | `AWS_ACCESS_KEY_ID` | Neon Object Storage credential for the `assets` bucket |
 | `AWS_SECRET_ACCESS_KEY` | Neon Object Storage credential for the `assets` bucket |
 | `AWS_ENDPOINT_URL_S3` | Neon Object Storage S3-compatible endpoint |
@@ -53,36 +53,54 @@ npx vercel --prod
 
 Prints the deployment URL. This step alone does not touch the database or the bucket — the
 app deploys, but a fresh production database has no schema and no data yet, so nothing
-will work until step 4 runs.
+will work until steps 4–5 run.
 
-## 4. Migrate + seed (owner only — never run by an agent)
+## 4. Migrate + verify
 
-The owner runs these directly, from their own shell, with the values from step 1's env
-vars (the agent never sees them):
+**Which database is production.** The env table says the Neon **main** branch; at the time
+of writing production shares the development branch (`DATABASE_URL` is the same string in
+`.env.local` and in Vercel). Until that changes, every local `npm run seed` and
+`npm run test:e2e` is a production mutation: the seed deletes and recreates every
+`[seed] …` game under `SEED_MASTER_ID`, and Playwright's global setup runs that seed under
+the Clerk e2e user, then `author.spec` publishes the seeded draft. Move production to its
+own branch before opening the site to anyone else.
+
+The owner runs the migration directly, from their own shell, with the values from step
+1's env vars (the agent never sees them). `db:migrate` needs the unpooled connection
+because migrations hold a session:
 
 ```bash
 DATABASE_URL_UNPOOLED=<unpooled> npm run db:migrate
-DATABASE_URL=<pooled> SEED_MASTER_ID=<clerk id> npm run seed
 ```
 
-`db:migrate` needs the unpooled connection because migrations hold a session; `seed` uses
-the pooled one, matching how the app itself connects at runtime.
-
-## 5. Verify
-
-Run the Playwright suite against the live deployment. `PLAYWRIGHT_BASE_URL` switches
+Then run the Playwright suite against the live deployment. `PLAYWRIGHT_BASE_URL` switches
 `playwright.config.ts` into remote mode (no local server is started; `generate.spec.ts`
 skips itself since generation against a live server would call Gemini for real).
 `DATABASE_URL` must point at the same database the deployment uses, since global setup
-seeds through it directly:
+seeds through it directly — and that seed runs as the e2e user, which is why the owner's
+seed comes *after* this step, not before:
 
 ```bash
 PLAYWRIGHT_BASE_URL=<url> DATABASE_URL=<pooled> npm run test:e2e
 ```
 
+## 5. Seed as the owner (owner only — never run by an agent), then a manual pass
+
+Last, so the §9.2 demo set (one game in every lifecycle state) belongs to the owner and
+none of it has been played or published by the test run:
+
+```bash
+DATABASE_URL=<pooled> SEED_MASTER_ID=<clerk id> npm run seed
+```
+
+`seed` uses the pooled connection, matching how the app itself connects at runtime.
+Re-run it after any later `npm run test:e2e` against this database.
+
 Then one manual pass from a second Google account (SPEC §9.1): sign in, play a published
 game end to end, confirm scoring and timing behave as a real second player would see them
-— something the seeded Clerk test user's automated run doesn't cover.
+— something the seeded Clerk test user's automated run doesn't cover. And one real
+generation from the owner's account, which is the first time `sharp` and Gemini run on
+Vercel.
 
 ## 6. Rollback
 

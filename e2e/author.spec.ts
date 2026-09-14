@@ -17,7 +17,7 @@ test("master positions by dragging, confirms, and publishes", async ({ page }) =
   await page.getByRole("button", { name: "Publish" }).click();
   // Next's route announcer is also role="alert", so narrow to the one carrying the message.
   await expect(page.getByRole("alert").filter({ hasText: /not confirmed/ })).toBeVisible();
-  await settled(canvas); // the redirect re-rendered the page with fresh image URLs
+  await settled(canvas); // the redirect re-rendered the page; wait for the reflow
 
   // A click that does not move the marker is not a change: no save, badge untouched (zero-delta guard).
   const still = await centerOf(markers.nth(0));

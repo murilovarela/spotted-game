@@ -29,9 +29,8 @@ export async function drag(page: Page, from: Locator, to: Point): Promise<void> 
 
 /**
  * Wait until every image on the page has finished loading and the canvas box has stopped
- * moving, then scroll the canvas fully into view. Images arrive from presigned URLs that
- * change on every server render, and some carry no dimensions (the master page's background
- * preview), so the page reflows after each navigation; a box measured before that is stale
+ * moving, then scroll the canvas fully into view. Some images carry no dimensions (the
+ * master page's background preview), so the page reflows after each navigation; a box measured before that is stale
  * by the time the pointer gets there. Pointer events outside the viewport are not hit-tested,
  * so a canvas below the fold must be scrolled to before any of its boxes are measured.
  */

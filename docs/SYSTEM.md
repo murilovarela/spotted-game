@@ -187,8 +187,10 @@ after being needed twice.
 
 ### 5.4 The quality ratchet
 
-The Stop hook guards one session; the ratchet guards `main` across sessions. Eight jobs
-run in parallel on every pull request (`.github/workflows/ci.yml`):
+The Stop hook guards one session; the ratchet guards `main` across sessions. Ten gate jobs
+run on every pull request and on every push to `main` (`.github/workflows/ci.yml`) — the
+eight below in parallel, then `integration` (Neon branch) and `e2e` (Playwright) in
+sequence, since both share one database:
 
 | Job | Tool | Metric compared |
 | --- | --- | --- |
@@ -226,27 +228,39 @@ Two distinct loops, at different layers.
 
 ### 6.1 Product loop — image generation retry
 
-This one is a shipped feature, not a development artifact. Full trace with timings and
-prompt diffs in [AI-DEV-LOG.md](./AI-DEV-LOG.md) §3, sourced from the `generation_runs`
-table.
+This one is a shipped feature, not a development artifact. Full trace with timings,
+failure reasons and the adjustment each failure added, in
+[AI-DEV-LOG.md](./AI-DEV-LOG.md) under "Autonomous loop evidence → Loop 1", sourced from
+the `generation_runs` rows of game `31defdcf-7314-4fdd-ba0c-c25c3cc8093b` on the
+development database.
 
 ```
-attempt 1  generate → diff → vision
-           FAIL: object "coffee mug" absent from diff regions
-           adjust: raise prominence, restate placement explicitly
+attempt 1  letterbox → generate → diff → vision
+           FAIL: "Teddy bear" absent (diff merged it with the sneaker);
+                 "Blue sneaker" 12.8× the requested scale
+           adjust: restate the bear's placement, "clearly visible and larger";
+                   restate the sneaker's 10 % width
 attempt 2  generate → diff → vision
-           FAIL: "coffee mug" and "rubber duck" boxes overlap 41%
-           adjust: add explicit separation constraint
+           FAIL: "Teddy bear" 159.6× the requested scale (recovered attempt 1's
+                 two failures, but "larger" overshot)
+           adjust: restate the bear's 3 % width
 attempt 3  generate → diff → vision
-           PASS: 5/5 objects, confidence 0.81–0.94, no overlap
+           FAIL: both absent (diff merged bear, bag and sneaker) — cap reached,
+                 game left untouched
 ```
 
-No human input between attempts. The adjustment at each step is selected by the failure
-taxonomy in SPEC §5.3.
+No human input between attempts; the adjustment at each step is selected by the failure
+taxonomy in SPEC §5.3. That run did not pass — its lesson (adjustments accumulate and
+contradict; a merged diff region reads as "absent") drove the Phase 4 fixed-frame and
+vision-fallback work. The same code path *with* a final pass is recorded in the same
+dev-log section: the golden-set eval's `beach-towel` case went absent → adjusted → pass
+on attempt 2 (0.99 / 0.98), and after the diff re-tune every golden case passed on
+attempt 1.
 
 ### 6.2 Development loop — Stop hook recovery
 
-`docs/evidence/stop-hook-loop.txt` — a transcript excerpt showing the agent finishing an
+[AI-DEV-LOG.md](./AI-DEV-LOG.md) "Autonomous loop evidence → Loop 2" — a transcript excerpt
+showing the agent finishing an
 implementation, the `Stop` hook blocking on two failing scoring tests, the agent reading
 the failure, identifying that a marker was double-counted against one object, fixing the
 consumed-object set, and re-running to green. One human prompt at the start; none in the
@@ -299,7 +313,7 @@ Where judgment was applied rather than delegated. These were the actual forks.
 git clone <repo> && cd spotted
 cp .env.example .env.local        # fill in
 npm install
-npm run db:push
+npm run db:migrate
 npm run seed                      # demo games in all four lifecycle states
 npm run dev
 ```
