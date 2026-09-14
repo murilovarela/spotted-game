@@ -56,6 +56,8 @@ export const SCALE_TOLERANCE = 10;
  */
 export const MAX_CHANGED_FRACTION = 0.6;
 export const STALE_AFTER_MS = 10 * 60_000;
+/** Gaussian sigma applied to both frames before the diff, so grain and 1px shifts are not changes. */
+export const DIFF_BLUR_SIGMA = 1.5;
 /** Longest side of the background handed to the backend; larger uploads are downscaled first. */
 export const MAX_BACKGROUND_SIDE = 1536;
 /** Longest side of each object image handed to the backend. */

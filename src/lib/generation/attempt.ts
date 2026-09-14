@@ -3,7 +3,7 @@ import type { GenerationBackend } from "./backend";
 import { DIFF_DEFAULTS, diffRegions } from "./diff";
 import { cropPng, diffScale, downscale, letterboxTo, toRGBAAt } from "./images";
 import { adjustmentFor, composePrompt, mergeAdjustments } from "./prompt";
-import { type Adjustment, type Candidate, type ComposeResult, type GameInput, MAX_BACKGROUND_SIDE, MAX_CHANGED_FRACTION, MAX_OBJECT_SIDE, type ValidationResult, type VisionLabel } from "./types";
+import { type Adjustment, type Candidate, type ComposeResult, DIFF_BLUR_SIGMA, type GameInput, MAX_BACKGROUND_SIDE, MAX_CHANGED_FRACTION, MAX_OBJECT_SIDE, type ValidationResult, type VisionLabel } from "./types";
 import { changedFraction, validate } from "./validate";
 
 export type AttemptOutcome = {
@@ -35,8 +35,9 @@ export async function attemptOnce(backend: GenerationBackend, game: GameInput, a
   // mask keeps the outpainted fill bands out of the comparison.
   const size = { width: image.width, height: image.height };
   const small = diffScale(size);
-  const boxed = await letterboxTo(game.background, small);
-  const [gen, bg] = await Promise.all([toRGBAAt(image.png, small), toRGBAAt(boxed.png, small)]);
+  // The mask is inset by the blur's reach so fill bleeding into the edge is not a change either.
+  const boxed = await letterboxTo(game.background, small, Math.ceil(2 * DIFF_BLUR_SIGMA));
+  const [gen, bg] = await Promise.all([toRGBAAt(image.png, small, DIFF_BLUR_SIGMA), toRGBAAt(boxed.png, small, DIFF_BLUR_SIGMA)]);
   const candidates = diffRegions(bg, gen, small.width, small.height, { ...DIFF_DEFAULTS, maxCandidates: 2 * game.objects.length }, boxed.mask);
 
   // Labelling is only worth a call when there is something to label and the background survived:

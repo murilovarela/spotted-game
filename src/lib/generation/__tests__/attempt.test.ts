@@ -93,7 +93,8 @@ describe("attemptOnce", () => {
     expect(backend.labelCalls).toBe(0);
     expect(out.candidates.length).toBeGreaterThan(0);
     expect(out.labels).toEqual([]);
-    expect(out.visionRaw).toEqual({ diffCover: 1, labels: null, locate: null });
+    // The mask is inset by the blur's reach, so a whole-frame change covers a little under 100%.
+    expect(out.visionRaw).toEqual({ diffCover: expect.closeTo(0.82, 1), labels: null, locate: null });
     expect(out.result).toEqual({ ok: false, failures: [{ objectId: null, class: "background_altered", detail: expect.stringContaining("re-rendered") }] });
   });
 
@@ -111,7 +112,7 @@ describe("attemptOnce", () => {
     const vision = out.candidates.filter((c) => c.source === "vision");
     expect(vision).toEqual([{ x: 0.3, y: 0.4, w: 0.1, h: 0.1, area: expect.closeTo(0.01, 10), source: "vision" }]);
     expect(out.labels).toEqual([{ candidate: out.candidates.length - 1, objectId: "ball", confidence: 0.9 }]);
-    expect(out.visionRaw).toEqual({ diffCover: 1, labels: null, locate: { located: true } });
+    expect(out.visionRaw).toEqual({ diffCover: expect.closeTo(0.82, 1), labels: null, locate: { located: true } });
     expect(out.result.ok).toBe(true);
     if (out.result.ok) expect(out.result.proposals[0]).toMatchObject({ objectId: "ball", x: 0.35, y: 0.45 });
   });

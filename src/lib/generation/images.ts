@@ -57,9 +57,15 @@ export async function downscale(png: Uint8Array, maxSide: number): Promise<Uint8
   return new Uint8Array(buf);
 }
 
-/** Resize (stretch to exactly `size`) and decode. Used to bring background and output onto one grid. */
-export async function toRGBAAt(png: Uint8Array, size: ImageSize): Promise<Uint8Array> {
-  const buf = await sharp(png).resize(size.width, size.height, { fit: "fill" }).ensureAlpha().raw().toBuffer();
+/**
+ * Resize (stretch to exactly `size`) and decode. Used to bring background and output onto one
+ * grid. With `blurSigma`, a Gaussian blur is applied first so the diff sees changed content
+ * rather than re-encoding grain and one-pixel misalignments.
+ */
+export async function toRGBAAt(png: Uint8Array, size: ImageSize, blurSigma?: number): Promise<Uint8Array> {
+  let img = sharp(png).resize(size.width, size.height, { fit: "fill" });
+  if (blurSigma !== undefined) img = img.blur(blurSigma);
+  const buf = await img.ensureAlpha().raw().toBuffer();
   return new Uint8Array(buf);
 }
 

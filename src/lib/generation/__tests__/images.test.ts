@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import sharp from "sharp";
-import { decodeRGBA, dimensions, downscale, encodePng, letterboxTo, mimeOf, toPng } from "../images";
+import { decodeRGBA, dimensions, downscale, encodePng, letterboxTo, mimeOf, toPng, toRGBAAt } from "../images";
 
 describe("mimeOf", () => {
   it("recognises PNG, JPEG and WebP by magic bytes and rejects the rest", async () => {
@@ -72,5 +72,24 @@ describe("letterboxTo", () => {
     expect(mask.reduce((a, b) => a + b, 0)).toBe((40 - 4) * (30 - 4));
     expect(mask[2 * 40 + 1]).toBe(0);
     expect(mask[2 * 40 + 2]).toBe(1);
+  });
+});
+
+describe("toRGBAAt", () => {
+  it("decodes at the requested grid, and softens a hard edge only when a blur sigma is given", async () => {
+    const w = 32;
+    const data = new Uint8Array(w * w * 4);
+    for (let i = 0; i < w * w; i++) data.set(i % w < 16 ? [0, 0, 0, 255] : [255, 255, 255, 255], i * 4);
+    const png = await encodePng(data, { width: w, height: w });
+    const sharpEdge = await toRGBAAt(png, { width: w, height: w });
+    expect(sharpEdge).toHaveLength(w * w * 4);
+    expect(sharpEdge[(8 * w + 15) * 4]).toBe(0);
+    expect(sharpEdge[(8 * w + 16) * 4]).toBe(255);
+    const soft = await toRGBAAt(png, { width: w, height: w }, 1.5);
+    expect(soft[(8 * w + 15) * 4]).toBeGreaterThan(0);
+    expect(soft[(8 * w + 16) * 4]).toBeLessThan(255);
+    // Far from the edge the blur changes nothing.
+    expect(soft[(8 * w + 2) * 4]).toBe(0);
+    expect(soft[(8 * w + 29) * 4]).toBe(255);
   });
 });
