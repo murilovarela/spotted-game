@@ -18,17 +18,17 @@ Approved in chat 2026-09-14. Argues from `docs/SPEC.md` §5.3, §5.4, §6.4–6.
 
 | File | Pure? | Responsibility |
 | --- | --- | --- |
-| `types.ts` | — | `Candidate {x,y,w,h,area}` (normalized), `VisionLabel {candidate, objectId, confidence}`, `Proposal`, `FailureClass = background_altered \| absent \| low_confidence \| overlap \| out_of_bounds \| scale \| config \| error \| stale`, `Failure {objectId, class, detail}`, `AttemptOutcome` |
+| `types.ts` | — | `Candidate {x,y,w,h,area,source: diff \| vision}` (normalized), `VisionLabel {candidate, objectId, confidence}`, `Location {objectId, box, confidence}`, `Proposal`, `OUTPUT_ASPECT` (4:3), `DIFF_BLUR_SIGMA` (1.5), `FailureClass = background_altered \| absent \| low_confidence \| overlap \| out_of_bounds \| scale \| config \| error \| stale`, `Failure {objectId, class, detail}`, `AttemptOutcome` |
 | `prompt.ts` | yes | `composePrompt(game, objects, adjustments)`; `adjustmentFor(failure, object)` per SPEC §5.3 table |
-| `diff.ts` | yes | `diffRegions(bg, gen, w, h, opts = DIFF_DEFAULTS) → Candidate[]` over RGBA `Uint8Array` |
+| `diff.ts` | yes | `diffRegions(bg, gen, w, h, opts = DIFF_DEFAULTS, mask?) → Candidate[]` over RGBA `Uint8Array`; pixels with `mask === 0` (letterbox fill) are never changed |
 | `validate.ts` | yes | SPEC predicate → `{ok:true, proposals} \| {ok:false, failures}` |
-| `boxes.ts` | yes | box→circle (aspect-aware radius in width units), overlap fraction, margin test, scale ratio |
+| `boxes.ts` | yes | box→circle (aspect-aware radius in width units), overlap fraction, margin test, scale ratio, `outputFrameFor` (smallest 4:3 frame containing a size), `fitRect` (letterbox geometry) |
 | `status.ts` | yes | `deriveGenerationState(runs, now)` → `idle \| running \| passed \| failed{reason, attempts}`; `running` > 10 min ⇒ `failed: stale` |
-| `images.ts` | sharp | decode→RGBA, resize to dims, downscale for diff (longest side ≤ 512), bound backend inputs (`downscale`: background ≤ 1536, object images ≤ 512 on the long side), crop, encode PNG |
-| `backend.ts` | — | `GenerationBackend { compose(input) → {png, width, height}; label(scene, candidates, objects) → VisionLabel[] }`; `backendFromEnv()` |
-| `gemini.ts` | I/O | `@google/genai`; `GEMINI_IMAGE_MODEL` (default `gemini-3.1-flash-image`), `GEMINI_VISION_MODEL` (default `gemini-3.6-flash` — `3.1-flash` does not exist, `2.5-flash` is retired); JSON-schema vision output |
-| `paste.ts` | placement pure, composite sharp | seeded PRNG by `gameId`; margin 10 %; no overlap; width = `(requestedScale ?? 0.12) × W`; `label` = known boxes, confidence 1 |
-| `attempt.ts` | I/O-free given a backend | `attemptOnce(backend, input, adjustments) → AttemptOutcome` — bound inputs, compose, diff, label (skipped when the changed regions exceed 60 % of the frame), validate; used by `run.ts` and the eval |
+| `images.ts` | sharp | decode→RGBA, resize to dims (optionally Gaussian-blurred), downscale for diff (longest side ≤ 512), `letterboxTo` (fit into a frame on neutral grey + mask of real pixels), bound backend inputs (`downscale`: background ≤ 1536, object images ≤ 512 on the long side), crop, encode PNG |
+| `backend.ts` | — | `GenerationBackend { compose(input) → {png, width, height}; label(scene, candidates, objects) → VisionLabel[]; locate?(scene, objects) → Location[] }`; `backendFromEnv()` |
+| `gemini.ts` | I/O | `@google/genai`; `GEMINI_IMAGE_MODEL` (default `gemini-3.1-flash-image`), `GEMINI_VISION_MODEL` (default `gemini-3.6-flash` — `3.1-flash` does not exist, `2.5-flash` is retired); compose always requests `imageConfig { aspectRatio: "4:3", imageSize: "1K" }`; JSON-schema vision output for both `label` and `locate` (`box_2d` = [ymin, xmin, ymax, xmax] on a 0–1000 grid) |
+| `paste.ts` | placement pure, composite sharp | composites onto the background letterboxed to 4:3; seeded PRNG by `gameId`; placement confined to the real-background area, margin 10 %; no overlap; width = `(requestedScale ?? 0.06) × W`; `label` and `locate` = known boxes, confidence 1 |
+| `attempt.ts` | I/O-free given a backend | `attemptOnce(backend, input, adjustments) → AttemptOutcome` — bound inputs, compose, letterboxed + blurred diff, label (skipped when the changed regions exceed 60 % of the frame), locate for the objects still unresolved, validate; used by `run.ts` and the eval |
 | `run.ts` | DB | `runGeneration(db, gameId, backend, deps)` — the loop, persists every attempt, `setGeneratedImage` on pass |
 | `actions.ts` | server | `startGenerationAction(gameId)` (polling is `router.refresh()` from the panel; no state action) |
 
@@ -59,22 +59,35 @@ start two loops. Then `after(() => runGeneration(...))`; returns `{ attemptNumbe
 
 ## Pixel diff (deterministic)
 
-Both images at the generated dims, downscaled to longest side ≤ 512. Mask = max channel
-|Δ| > 40. Two 3×3 dilations. 8-connected components (flood fill) → boxes; drop < 0.05 % of
-frame; merge boxes overlapping or within 2 %; keep the largest `2N`. Return normalized
-boxes. Tunables in `DIFF_DEFAULTS`.
+The output frame is always 4:3 (`OUTPUT_ASPECT`; the model is asked for `4:3` at `1K`).
+The background is letterboxed into the generated dims (fit inside, centred, neutral grey
+fill) and both frames are downscaled to longest side ≤ 512 and Gaussian-blurred
+(`DIFF_BLUR_SIGMA` 1.5) so re-encoding grain and one-pixel shifts are not changes. A mask
+of the real background pixels, inset by the blur's reach, keeps the fill bands out of the
+comparison. Mask = max channel |Δ| > 60. One 3×3 dilation. 8-connected components (flood
+fill) → boxes; drop < 0.05 % of frame; merge boxes overlapping or within 2 %; keep the
+largest `2N`. Return normalized boxes with `source: "diff"`. Tunables in `DIFF_DEFAULTS`.
 
 ## Vision
 
 One call: generated image + numbered candidate crops + named object thumbnails; response
 constrained to `[{candidate, objectId | null, confidence}]`. Vision never searches the
-frame. Threshold 0.6.
+frame for the diff's candidates. Threshold 0.6.
+
+Localisation fallback: when the diff is unusable (changed regions over 60 % of the frame)
+or leaves an object with no label, `backend.locate` is asked where those objects are —
+scene + reference images, response constrained to `[{objectId, box_2d, confidence}]` in
+the documented 0–1000 `box_2d` format (`parseLocations`, pure). The boxes join the
+candidates as `source: "vision"` with a synthetic label and go through the same
+validation; the master still confirms by dragging (SPEC §5.4). Evidence records
+`diffCover` and both raw responses under `vision_response.raw.{labels, locate}`.
 
 ## Validation (SPEC §5.3, in order per object)
 
-Scene-level first: when the merged candidates cover more than 60 % of the frame the
-background was re-rendered (`background_altered`) and that single failure replaces the
-per-object checks; vision is not called for such a frame. Then, per object:
+Scene-level first: when the diff's merged candidates cover more than 60 % of the frame the
+background was re-rendered (`background_altered`); the crops are not labelled, and that
+single failure stands only if the localisation fallback found nothing — otherwise the
+per-object checks run over the located boxes. Then, per object:
 exactly one matched candidate (`absent`; a second match is dropped as a decoy) →
 `low_confidence` < 0.6 → box inside frame and outside the 3 % margin (`out_of_bounds`) →
 pairwise overlap ≤ 20 % of the smaller box (`overlap`) → when `requestedScale` is set, box
@@ -84,18 +97,24 @@ area within 10× either way of `requestedScale²` (`scale`). Proposal circle: bo
 ## Adjustments (SPEC §5.3 table)
 
 `background_altered` → edit the supplied image in place, change nothing but the added
-objects; `absent` → restate placement explicitly, "clearly visible, larger"; `low_confidence` →
-"not occluded, fully in view"; `overlap` → "well separated, at least a fifth of the image
-apart"; `out_of_bounds` → "central 80 % of the frame"; `scale` → pin size relative to a
-named background element and "roughly X % of the image width". Adjustments accumulate per
-object; the prompt is a pure function of (game, objects, adjustments) — no blind retries.
+objects; `absent` → restate placement explicitly, "slightly larger than before and less
+occluded, so a careful player can find it"; `low_confidence` → "show more of it: at most
+half may be covered"; `overlap` → "well separated, at least a fifth of the image apart";
+`out_of_bounds` → "central 80 % of the frame"; `scale` → pin size relative to a named
+background element and "roughly X % of the image width" (default 6 %). Adjustments
+accumulate per object; the prompt is a pure function of (game, objects, adjustments) — no
+blind retries.
 
 ## Compose prompt
 
-General prompt; a style guard ("keep the supplied background exactly as is — do not move,
-remove or restyle existing elements"); one line per object (label, prompt, requested
-size); hard rules (all objects fully visible, non-overlapping, away from the edges).
-Inputs: background first, then object images in `sortOrder`.
+General prompt; a game line (a hidden-object game: every object small, hidden in a
+plausible spot, partly tucked behind or among scene elements, but genuinely findable —
+fully rendered, recognisable, covered at most about half); a style guard ("keep the
+supplied background exactly as is — do not move, remove or restyle existing elements");
+the frame line ("a 4:3 landscape frame; extend a differently shaped background naturally,
+do not crop or stretch"); one line per object (label, prompt, requested size); hard rules
+(no object entirely hidden, non-overlapping, away from the edges, recognisable). Inputs:
+background first, then object images in `sortOrder`.
 
 ## Master UI
 

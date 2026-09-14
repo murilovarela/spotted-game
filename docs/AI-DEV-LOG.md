@@ -720,6 +720,102 @@ is waiting for them.
 
 ---
 
+## Phase 4 — Generation: one frame, a game-aware prompt, a vision fallback
+
+Branch `phase-4/generation-fixed-frame`, five commits, one `image-pipeline` session.
+Brief: `.superpowers/p4/brief-fixed-frame.md` (not committed); design changes recorded in
+`docs/specs/2026-09-14-phase-2-imagegen-design.md` and SPEC §5.3.
+
+### What we set out to do
+
+A real game broke the loop in a way the golden set never showed. The master uploaded a
+424×538 portrait photo of a house and asked for a woman "in a hidden place, small and
+hard to find". The model answered a 928×1152 frame with every tree re-drawn, the diff
+flagged 60–78 % of the frame on all five attempts, and every attempt failed as
+`background_altered` — while the model had in fact put the woman exactly where asked, tiny,
+in a doorway. Three things had gone wrong at once: the output shape followed the upload,
+the prompt said nothing about what the picture was for, and a diff that cannot see a
+small object had no second opinion.
+
+### What we decided and why
+
+One frame for every game. `gemini.compose` always asks for `4:3` at `1K` (the SDK's
+`ImageConfig.imageSize` is a string with documented values `1K`, `2K`, `4K`; `1K` came
+back as 1200×896). The prompt tells the model to extend a differently shaped background
+to fill the frame, not crop or stretch it. The alternative — keep matching the upload's
+shape — is what produced a different canvas geometry per game and a 3:4 request the model
+answered with a re-synthesised scene. `closestAspectRatio` is gone with its only caller.
+
+The diff compares against the background *letterboxed* into the output grid rather than
+stretched to it: `images.letterboxTo` fits the upload on a neutral grey field and returns
+a mask of the real pixels, and `diffRegions` takes that mask so the model's outpainted
+bands can never count as a change. Both frames are Gaussian-blurred (sigma 1.5) first so
+re-encoding grain and one-pixel shifts are not changes; the mask is inset by the blur's
+reach so grey bleeding into the edge is not one either. The paste backend composites onto
+the same letterboxed frame and places objects only on the real background, so CI's
+deterministic path has the same shape as the model's.
+
+The prompt now says what the image is for. One paragraph after the scene line explains
+the hidden-object game — small, plausibly hidden, partly tucked behind scene elements, but
+genuinely findable and covered at most about half — and the rules line asks for "no object
+entirely hidden" instead of "every object fully visible". The `absent` and
+`low_confidence` adjustments follow the same idea, and the default scale dropped from 12 %
+to 6 % of the width. The old prompt was fighting the master: it asked for prominent
+objects in a game whose point is that they are not.
+
+A vision fallback, bounded. `GenerationBackend` gained an optional `locate`: one call
+with the scene and the reference images, answering in Gemini's documented `box_2d`
+localisation format on a 0–1000 grid, parsed by a pure `parseLocations`. `attemptOnce`
+calls it only for the objects the diff left unresolved — all of them when the diff is
+unusable — and the boxes join the candidates as `source: "vision"` through the same
+validation. `background_altered` is no longer terminal by itself; it stands only when the
+fallback found nothing. This keeps the load-bearing rule — vision labels regions it is
+given, and the master still confirms by dragging — while giving the loop a way forward when
+the diff is structurally blind. The alternative, raising the 60 % threshold, would have
+passed the user's frames while still saying nothing about where the woman was.
+
+### What broke
+
+`parseLocations` first computed the box as `(xmax − xmin)` after dividing by 1000, and the
+unit test showed `0.39999999999999997` for a 400-wide box; it now clamps on the integer
+grid and divides once. The first `paste.locate` needed a game id the `LocateInput` does
+not carry, so the paste backend's placements are keyed by object id instead. Factoring
+`label` and `locate` into one `visionJson` helper was forced by jscpd reporting a 12-line
+clone. Exporting `ObjectInput` for the new types made knip report it unused, so it stays
+module-private.
+
+The E2E could not run the usual way: a `gemini`-mode dev server from the user's own
+session already owned port 3000, Playwright would have reused it and spent real quota,
+and Next 16 refuses a second dev server in the same directory. The suite ran against a
+production build on port 3001 with `GENERATION_MODE=paste` from a scratch config; the
+user's server was left running.
+
+### What changed because of it
+
+The user's case, re-run through `attemptOnce` with the real backend: attempt 1 returned
+1200×896; the diff still flagged 45 % of the frame (one region over the whole letterboxed
+content — the model re-composed the scene while extending it), vision labelled that
+region as none of the objects, so `locate` ran for the woman and returned a 2.3 % × 4.9 %
+box by the pool, half behind a hedge, at confidence 0.98; validation passed. One compose,
+two vision calls, no retry. The golden set is 5/5 on attempt 1 with the new prompt; on
+`kitchen-counter` the diff found two regions for three objects and `locate` resolved the
+third at 0.95. Diff cover on the golden frames is 0.7–10 %.
+
+Numbers: 202 unit tests (+18), line coverage 99.45 % (baseline 99.41), 0 clones, knip
+clean, 7 integration tests, 8 Playwright tests in paste mode. API spend for the session:
+6 compose and 8 vision calls against a budget of 20 and 40.
+
+### Where this leaves us
+
+A non-4:3 upload now produces a 4:3 game whose diff is honest about what it can and
+cannot see, and the vision fallback carries the cases it cannot. Two things to watch: the
+model does not keep the letterboxed content where the mask expects it when it extends a
+scene, so for such uploads the diff will usually read as "content re-composed" and the
+fallback will do the finding; and the 60 % threshold is measured against the whole frame,
+not the masked area, so a portrait upload's diff can be effectively unusable at 45 %.
+
+---
+
 ## Autonomous loop evidence
 
 ### Loop 1 — Generation retry (product)

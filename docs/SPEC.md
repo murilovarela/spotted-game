@@ -160,6 +160,9 @@ Pixel-diffing before vision is the load-bearing decision. It reduces detection f
 open-ended search over the whole frame to a labelling problem over a handful of known
 candidate regions — which is both more reliable and cheaper. It also catches the case
 where the model silently declined to place an object: no diff region, no candidate.
+When the diff is unusable (the model re-rendered the frame) or finds nothing for an
+object, the vision model is asked to locate that object directly; those boxes go through
+the same validation and the master still confirms by dragging (§5.4).
 
 **Validation predicate** — all must hold:
 
