@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { insideMargin, overlapFraction, scaleRatio, toCircle } from "../boxes";
+import { closestAspectRatio, insideMargin, overlapFraction, scaleRatio, toCircle } from "../boxes";
 
 const image = { width: 1000, height: 500 };
 
@@ -51,5 +51,18 @@ describe("scaleRatio", () => {
   });
   it("scales with area", () => {
     expect(scaleRatio({ x: 0, y: 0, w: 0.2, h: 0.4 }, 0.1, image)).toBeCloseTo(4, 10);
+  });
+});
+
+describe("closestAspectRatio", () => {
+  it("picks the supported ratio nearest to the image's shape", () => {
+    expect(closestAspectRatio(1024, 768)).toBe("4:3");
+    expect(closestAspectRatio(1000, 1000)).toBe("1:1");
+    expect(closestAspectRatio(1920, 1080)).toBe("16:9");
+    expect(closestAspectRatio(768, 1024)).toBe("3:4");
+  });
+  it("snaps an unsupported ratio to the nearest one (1:2 → 9:16)", () => {
+    expect(closestAspectRatio(500, 1000)).toBe("9:16");
+    expect(closestAspectRatio(3000, 1000)).toBe("21:9");
   });
 });

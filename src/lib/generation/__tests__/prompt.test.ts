@@ -39,6 +39,12 @@ describe("adjustmentFor", () => {
     expect(adjustmentFor({ objectId: "a", class: "out_of_bounds", detail: "" }, cup)).toEqual({ objectId: null, text: "Place all objects within the central 80% of the frame, away from every edge." });
     expect(adjustmentFor({ objectId: "a", class: "scale", detail: "" }, cup)?.text).toBe("The Coffee mug should be roughly 10% of the image width — about the size of a prominent element of the scene.");
   });
+  it("maps background_altered to a scene-level instruction to edit in place", () => {
+    expect(adjustmentFor({ objectId: null, class: "background_altered", detail: "" }, null)).toEqual({
+      objectId: null,
+      text: "Edit the supplied background image in place: keep every existing pixel, colour and element exactly as it is, and change nothing except adding the listed objects.",
+    });
+  });
   it("uses a default size when no scale was requested", () => {
     expect(adjustmentFor({ objectId: "b", class: "scale", detail: "" }, objects[1])?.text).toContain("roughly 12% of the image width");
   });

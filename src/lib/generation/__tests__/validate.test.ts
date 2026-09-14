@@ -76,6 +76,25 @@ describe("validate", () => {
     const fine = validate(scaled, [box(0.2, 0.2, 0.3, 0.3)], [{ candidate: 0, objectId: "a", confidence: 0.9 }], image);
     expect(fine.ok).toBe(true);
   });
+  it("reports background_altered when a single candidate covers more than 60% of the frame", () => {
+    const r = validate(objects, [box(0.1, 0.1, 0.7, 1.0)], [{ candidate: 0, objectId: "a", confidence: 0.99 }], image);
+    expect(r).toEqual({ ok: false, failures: [{ objectId: null, class: "background_altered", detail: "changed regions cover 70% of the frame; the background was re-rendered" }] });
+  });
+  it("reports background_altered when the candidates together cover more than 60%", () => {
+    const candidates = [box(0.0, 0.0, 0.8, 0.5), box(0.0, 0.6, 0.75, 0.4)]; // 0.4 + 0.3
+    const labels: VisionLabel[] = [
+      { candidate: 0, objectId: "a", confidence: 0.9 },
+      { candidate: 1, objectId: "b", confidence: 0.9 },
+    ];
+    const r = validate(objects, candidates, labels, image);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.failures.map((f) => [f.objectId, f.class])).toEqual([[null, "background_altered"]]);
+  });
+  it("falls through to the per-object checks at 50% changed", () => {
+    const r = validate(objects, [box(0.1, 0.1, 0.5, 1.0)], [{ candidate: 0, objectId: "a", confidence: 0.99 }], image);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.failures.map((f) => [f.objectId, f.class])).toEqual([["a", "out_of_bounds"], ["b", "absent"]]);
+  });
   it("reports only the first failing class per object, in SPEC order", () => {
     // a: low confidence AND out of bounds → low_confidence wins
     const r = validate(objects, [box(0.0, 0.5), box(0.6, 0.6)], [{ candidate: 0, objectId: "a", confidence: 0.1 }, { candidate: 1, objectId: "b", confidence: 0.9 }], image);

@@ -1,13 +1,20 @@
 /**
  * SPEC §5.3 validation predicate. Pure: candidates + vision labels in, proposals or
  * failures out. Per object the checks run in SPEC order and the first failure wins;
- * overlap is checked last, pairwise, among objects that passed their own checks.
+ * overlap is checked last, pairwise, among objects that passed their own checks. Before
+ * any of that: if the changed regions cover most of the frame the background itself was
+ * re-rendered, and that single scene-level failure replaces the per-object ones.
  */
 import type { ImageSize } from "@/lib/types";
 import { insideMargin, overlapFraction, scaleRatio, toCircle } from "./boxes";
-import { CONFIDENCE_THRESHOLD, FRAME_MARGIN, MAX_OVERLAP, SCALE_TOLERANCE, type Box, type Candidate, type Failure, type ValidationResult, type VisionLabel } from "./types";
+import { CONFIDENCE_THRESHOLD, FRAME_MARGIN, MAX_CHANGED_FRACTION, MAX_OVERLAP, SCALE_TOLERANCE, type Box, type Candidate, type Failure, type ValidationResult, type VisionLabel } from "./types";
 
 export type ValidatableObject = { readonly id: string; readonly label: string; readonly requestedScale: number | null };
+
+/** Fraction of the frame covered by candidates (boxes are already merged, so the sum is the cover). */
+function changedFraction(candidates: readonly Candidate[]): number {
+  return candidates.reduce((sum, c) => sum + c.area, 0);
+}
 
 export function validate(
   objects: readonly ValidatableObject[],
@@ -15,6 +22,12 @@ export function validate(
   labels: readonly VisionLabel[],
   image: ImageSize,
 ): ValidationResult {
+  const changed = changedFraction(candidates);
+  if (changed > MAX_CHANGED_FRACTION) {
+    const pct = Math.round(changed * 100);
+    return { ok: false, failures: [{ objectId: null, class: "background_altered", detail: `changed regions cover ${pct}% of the frame; the background was re-rendered` }] };
+  }
+
   const failures: Failure[] = [];
   const matched = new Map<string, Box>();
   const known = new Set(objects.map((o) => o.id));

@@ -41,6 +41,8 @@ export function adjustmentFor(f: Failure, object: PromptObject | null): Adjustme
       return { objectId: null, text: "Keep every object well separated: at least a fifth of the image apart, none touching." };
     case "out_of_bounds":
       return { objectId: null, text: "Place all objects within the central 80% of the frame, away from every edge." };
+    case "background_altered":
+      return { objectId: null, text: "Edit the supplied background image in place: keep every existing pixel, colour and element exactly as it is, and change nothing except adding the listed objects." };
     case "scale":
       return { objectId: f.objectId, text: `The ${label} should be roughly ${pct(object?.requestedScale ?? null)} of the image width — about the size of a prominent element of the scene.` };
     case "config":

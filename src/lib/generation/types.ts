@@ -11,7 +11,7 @@ export type Candidate = Box & { readonly area: number };
 export type VisionLabel = { readonly candidate: number; readonly objectId: string | null; readonly confidence: number };
 export type Proposal = { readonly objectId: string; readonly x: Normalized; readonly y: Normalized; readonly radius: Normalized };
 
-export const FAILURE_CLASSES = ["absent", "low_confidence", "overlap", "out_of_bounds", "scale", "config", "error", "stale"] as const;
+export const FAILURE_CLASSES = ["background_altered", "absent", "low_confidence", "overlap", "out_of_bounds", "scale", "config", "error", "stale"] as const;
 export type FailureClass = (typeof FAILURE_CLASSES)[number];
 export type Failure = { readonly objectId: string | null; readonly class: FailureClass; readonly detail: string };
 /** A prompt addition for the next attempt; `objectId` null = applies to the whole scene. */
@@ -41,4 +41,9 @@ export const FRAME_MARGIN = 0.03;
 export const MAX_OVERLAP = 0.2;
 /** Box area may be within this factor of the requested scale, either way. */
 export const SCALE_TOLERANCE = 10;
+/**
+ * When the changed regions cover more than this fraction of the frame, the model
+ * re-rendered the background instead of editing it; per-object checks are meaningless.
+ */
+export const MAX_CHANGED_FRACTION = 0.6;
 export const STALE_AFTER_MS = 10 * 60_000;

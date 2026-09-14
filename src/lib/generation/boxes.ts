@@ -34,3 +34,22 @@ export function scaleRatio(b: Box, requestedScale: number, image: ImageSize): nu
   const expected = requestedScale * requestedScale * (image.width / image.height);
   return (b.w * b.h) / expected;
 }
+
+/** Output aspect ratios the image model accepts (SDK `ImageConfig.aspectRatio`). */
+export const ASPECT_RATIOS = ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"] as const;
+
+/** The supported ratio nearest to width/height, so the output is not reshaped away from the background. */
+export function closestAspectRatio(width: number, height: number): (typeof ASPECT_RATIOS)[number] {
+  const target = Math.log(width / height);
+  let best: (typeof ASPECT_RATIOS)[number] = ASPECT_RATIOS[0];
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const ratio of ASPECT_RATIOS) {
+    const [w, h] = ratio.split(":").map(Number);
+    const distance = Math.abs(Math.log(w / h) - target);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = ratio;
+    }
+  }
+  return best;
+}

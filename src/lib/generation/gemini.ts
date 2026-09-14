@@ -4,6 +4,7 @@
  */
 import { GoogleGenAI, Type } from "@google/genai";
 import type { GenerationBackend } from "./backend";
+import { closestAspectRatio } from "./boxes";
 import { dimensions, mimeOf, toPng } from "./images";
 import { parseLabels } from "./labels";
 
@@ -29,10 +30,12 @@ export function createGeminiBackend(cfg: GeminiConfig): GenerationBackend {
         inline(input.background),
         ...[...input.objects].sort((a, b) => a.sortOrder - b.sortOrder).flatMap((o, i) => [{ text: `Object ${i + 1} (${o.label}):` }, inline(o.image)]),
       ];
+      // Ask for the background's shape; an output in another aspect would diff as a whole-frame change.
+      const bg = await dimensions(input.background);
       const res = await ai.models.generateContent({
         model: cfg.imageModel,
         contents: [{ role: "user", parts }],
-        config: { responseModalities: ["IMAGE"] },
+        config: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: closestAspectRatio(bg.width, bg.height) } },
       });
       const part = res.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data);
       const data = part?.inlineData?.data;
