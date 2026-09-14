@@ -40,19 +40,30 @@ export function diffMask(a: Uint8Array, b: Uint8Array, width: number, height: nu
   return mask;
 }
 
+/** The 3×3 neighbourhood (the pixel itself included), as (dx, dy) offsets. */
+const NEIGHBOURS: ReadonlyArray<readonly [number, number]> = [
+  [-1, -1], [0, -1], [1, -1],
+  [-1, 0], [0, 0], [1, 0],
+  [-1, 1], [0, 1], [1, 1],
+];
+
+/** Call `visit` with the flat index of every in-frame pixel in the 3×3 neighbourhood of (x, y). */
+function forEachNeighbour(x: number, y: number, width: number, height: number, visit: (index: number) => void): void {
+  for (const [dx, dy] of NEIGHBOURS) {
+    const xx = x + dx;
+    const yy = y + dy;
+    if (xx >= 0 && xx < width && yy >= 0 && yy < height) visit(yy * width + xx);
+  }
+}
+
 export function dilate(mask: Uint8Array, width: number, height: number): Uint8Array {
   const out = new Uint8Array(mask.length);
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       if (mask[y * width + x] === 0) continue;
-      for (let dy = -1; dy <= 1; dy++) {
-        const yy = y + dy;
-        if (yy < 0 || yy >= height) continue;
-        for (let dx = -1; dx <= 1; dx++) {
-          const xx = x + dx;
-          if (xx >= 0 && xx < width) out[yy * width + xx] = 1;
-        }
-      }
+      forEachNeighbour(x, y, width, height, (j) => {
+        out[j] = 1;
+      });
     }
   }
   return out;
@@ -77,19 +88,12 @@ export function components(mask: Uint8Array, width: number, height: number): Com
       if (x > maxX) maxX = x;
       if (y < minY) minY = y;
       if (y > maxY) maxY = y;
-      for (let dy = -1; dy <= 1; dy++) {
-        const yy = y + dy;
-        if (yy < 0 || yy >= height) continue;
-        for (let dx = -1; dx <= 1; dx++) {
-          const xx = x + dx;
-          if (xx < 0 || xx >= width) continue;
-          const j = yy * width + xx;
-          if (mask[j] === 1 && seen[j] === 0) {
-            seen[j] = 1;
-            stack.push(j);
-          }
+      forEachNeighbour(x, y, width, height, (j) => {
+        if (mask[j] === 1 && seen[j] === 0) {
+          seen[j] = 1;
+          stack.push(j);
         }
-      }
+      });
     }
     out.push({ x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1, pixels });
   }
