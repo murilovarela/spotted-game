@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["src/lib/types.ts", "src/lib/visibility.ts", "src/db/index.ts", "neon.ts", ".claude/hooks/*.mjs", "src/lib/games/result.ts", "src/lib/games/validation.ts", "src/lib/auth.ts", "src/lib/storage.ts", "src/lib/games/upload.ts", "src/lib/games/actions.ts", "src/db/seed/index.ts", "src/components/canvas/marker-canvas.tsx", "src/components/canvas/trash-zone.tsx", "src/components/canvas/timer.tsx", "src/components/canvas/object-rail.tsx", "src/components/canvas/leaderboard.tsx"],
+  "entry": ["src/lib/types.ts", "src/lib/visibility.ts", "src/db/index.ts", "neon.ts", ".claude/hooks/*.mjs", "src/lib/games/result.ts", "src/lib/games/validation.ts", "src/lib/auth.ts", "src/lib/storage.ts", "src/lib/games/upload.ts", "src/lib/games/actions.ts", "src/db/seed/index.ts"],
   "project": ["src/**/*.{ts,tsx,css}", ".claude/hooks/*.mjs"],
   "ignoreDependencies": ["@neon/env"]
 }

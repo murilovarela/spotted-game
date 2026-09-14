@@ -1,7 +1,7 @@
 /** Play-mode marker state. Pure so the component stays thin and this stays unit-testable. */
 import type { Normalized, NormalizedPoint } from "@/lib/types";
 
-export type PlayMarker = { readonly id: string; readonly x: Normalized; readonly y: Normalized };
+type PlayMarker = { readonly id: string; readonly x: Normalized; readonly y: Normalized };
 
 export type MarkerState = {
   readonly markers: readonly PlayMarker[];

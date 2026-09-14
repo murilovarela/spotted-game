@@ -9,7 +9,7 @@ import { useRef, useState, type KeyboardEvent, type PointerEvent, type RefObject
 import type { GameImage, Normalized, NormalizedPoint } from "@/lib/types";
 import { nudge, radiusFromHandle, radiusPx, toNormalized, toPixel, type Rect } from "./geometry";
 
-export type CanvasMode = "play" | "author" | "reveal";
+type CanvasMode = "play" | "author" | "reveal";
 
 export type CanvasMarker = {
   readonly id: string;
