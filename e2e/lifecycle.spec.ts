@@ -13,6 +13,28 @@ test("a scheduled game renders for its master", async ({ page }) => {
   await expect(page.getByText("scheduled", { exact: true })).toBeVisible();
 });
 
+test("the master of an active game is sent to its edit page, not the play surface (SPEC §11)", async ({ page }) => {
+  const { active } = seed().mine;
+  await page.goto(`/g/${active.publicId}`);
+  await expect(page).toHaveURL(new RegExp(`/games/${active.id}$`));
+  await expect(page.getByText("active", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("marker-canvas")).toHaveAttribute("data-mode", "reveal");
+});
+
+test("a signed-out visitor sees the Start screen with a sign-in prompt and no canvas", async ({ browser }) => {
+  const context = await browser.newContext({ storageState: undefined });
+  try {
+    const page = await context.newPage();
+    await page.goto(`/g/${seed().theirs.active.publicId}`);
+    await expect(page.getByRole("link", { name: "Sign in to start" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Start" })).toHaveCount(0);
+    await expect(page.getByTestId("object-rail").locator("li")).toHaveCount(3);
+    await expect(page.getByTestId("marker-canvas")).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
+});
+
 test("a finished game reveals positions and the final board", async ({ page }) => {
   await page.goto(`/g/${seed().theirs.finished.publicId}`);
   await expect(page.getByTestId("marker-canvas")).toHaveAttribute("data-mode", "reveal");

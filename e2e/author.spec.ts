@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { drag, settled, within } from "./helpers";
+import { centerOf, drag, settled, within } from "./helpers";
 import { seed } from "./seed-data";
 
 test("master positions by dragging, confirms, and publishes", async ({ page }) => {
@@ -19,6 +19,15 @@ test("master positions by dragging, confirms, and publishes", async ({ page }) =
   await expect(page.getByRole("alert").filter({ hasText: /not confirmed/ })).toBeVisible();
   await settled(canvas); // the redirect re-rendered the page with fresh image URLs
 
+  // A click that does not move the marker is not a change: no save, badge untouched (zero-delta guard).
+  const still = await centerOf(markers.nth(0));
+  await page.mouse.move(still.x, still.y);
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  await expect(page.getByText("Saving…")).toHaveCount(0);
+  await expect(badge("unconfirmed")).toHaveCount(1);
+
   // Moving a confirmed object un-confirms it (Phase 1 rule, visible here).
   await drag(page, markers.nth(0), await within(canvas, 0.4, 0.4));
   await expect(badge("unconfirmed")).toHaveCount(2);
@@ -29,7 +38,7 @@ test("master positions by dragging, confirms, and publishes", async ({ page }) =
     const next = page.getByRole("button", { name: "Confirm", exact: true }).and(page.locator(":enabled")).first();
     if ((await next.count()) === 0) break;
     await next.click();
-    await expect(badge("unconfirmed")).toHaveCount(1 - i < 0 ? 0 : 1 - i);
+    await expect(badge("unconfirmed")).toHaveCount(Math.max(0, 1 - i));
   }
   await expect(badge("unconfirmed")).toHaveCount(0);
   await page.getByRole("button", { name: "Publish" }).click();

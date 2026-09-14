@@ -2,7 +2,7 @@ import { expect, type Locator, type Page } from "@playwright/test";
 
 export type Point = { x: number; y: number };
 
-export async function boxOf(locator: Locator): Promise<{ x: number; y: number; width: number; height: number }> {
+async function boxOf(locator: Locator): Promise<{ x: number; y: number; width: number; height: number }> {
   const b = await locator.boundingBox();
   if (!b) throw new Error("element has no bounding box");
   return b;

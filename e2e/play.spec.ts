@@ -11,11 +11,18 @@ test("plays a seeded game to a scored submission", async ({ page }) => {
 
   // Invariant (handoff "image before Start"): nothing the browser receives before Start
   // references the generated image. Checked on the wire, not in the DOM.
+  // The same detector runs on both sides of Start: `before` must stay empty, `after` must not,
+  // otherwise a silent detector (a renamed key prefix, say) would pass the invariant vacuously.
   let started = false;
-  const checks: Promise<string | null>[] = [];
+  const before: Promise<string | null>[] = [];
+  const after: Promise<string | null>[] = [];
+  const requested = { before: [] as string[], after: [] as string[] };
+  page.on("request", (req) => {
+    if (GENERATED.test(req.url())) requested[started ? "after" : "before"].push(req.url());
+  });
   page.on("response", (res) => {
-    if (started || !TEXTUAL.test(res.headers()["content-type"] ?? "")) return;
-    checks.push(res.text().then((body) => (GENERATED.test(body) ? res.url() : null)).catch(() => null));
+    if (!TEXTUAL.test(res.headers()["content-type"] ?? "")) return;
+    (started ? after : before).push(res.text().then((body) => (GENERATED.test(body) ? res.url() : null)).catch(() => null));
   });
 
   await page.goto(url);
@@ -25,18 +32,31 @@ test("plays a seeded game to a scored submission", async ({ page }) => {
   await expect(page.getByTestId("object-rail").locator("li")).toHaveCount(3);
   await expect(page.getByTestId("marker-canvas")).toHaveCount(0);
   // Drain: a response landing while an earlier batch is awaited is still checked.
-  let n = 0;
-  while (n < checks.length) {
-    n = checks.length;
-    await Promise.all(checks);
-  }
-  expect((await Promise.all(checks)).filter(Boolean), "generated image reached the client before Start").toEqual([]);
+  const drained = async (checks: Promise<string | null>[]) => {
+    let n = 0;
+    while (n < checks.length) {
+      n = checks.length;
+      await Promise.all(checks);
+    }
+    return (await Promise.all(checks)).filter(Boolean);
+  };
+  expect(await drained(before), "generated image reached the client before Start").toEqual([]);
+  expect(requested.before, "generated image was requested before Start").toEqual([]);
 
   started = true;
   await startButton.click();
   const canvas = page.getByTestId("marker-canvas");
   await expect(canvas).toBeVisible();
-  await expect(page.getByTestId("timer")).toBeVisible();
+  // Positive control: once started, the same detector fires on the wire and the browser fetches the image.
+  await expect.poll(async () => (await drained(after)).length, "detector never fired after Start").toBeGreaterThan(0);
+  await expect.poll(() => requested.after.length, "generated image never requested after Start").toBeGreaterThan(0);
+  const timer = page.getByTestId("timer");
+  await expect(timer).toBeVisible();
+  // Server-anchored elapsed time is ticking: not zero, and different a beat later.
+  const t0 = await timer.textContent();
+  expect(t0).not.toBe("0:00.0");
+  await page.waitForTimeout(300);
+  await expect(timer).not.toHaveText(t0 ?? "");
   // SPEC §8: thumbnails stay visible throughout play; the leaderboard is hidden until submission.
   await expect(page.getByTestId("object-rail").locator("li")).toHaveCount(3);
   await expect(page.getByTestId("leaderboard")).toHaveCount(0);
@@ -82,9 +102,10 @@ test("plays a seeded game to a scored submission", async ({ page }) => {
   const response = await submitResponse;
   expect(response.status()).toBe(200);
   const body = await response.text();
-  expect(body).not.toMatch(/"radius"|"x":\s*0\./);
+  expect(body).not.toMatch(/"radius"|"[xy]":\s*\d/);
 
   await expect(page.getByTestId("result")).toContainText("Found 3 of 3");
+  await expect(page.getByTestId("marker")).toHaveCount(0); // the result shows the bare image (SPEC §3.3.7)
   await expect(page.getByTestId("leaderboard").locator("tr[data-viewer]")).toHaveCount(1);
 
   // One shot: reloading shows the result again, never the canvas.
