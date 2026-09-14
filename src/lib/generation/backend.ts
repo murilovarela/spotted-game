@@ -1,4 +1,6 @@
 /** The seam between the pipeline and any image/vision provider. */
+import { createGeminiBackend, GEMINI_DEFAULTS } from "./gemini";
+import { createPasteBackend } from "./paste";
 import type { Candidate, ComposeResult, GameInput, VisionLabel } from "./types";
 
 export type ComposeInput = GameInput & { readonly prompt: string };
@@ -19,4 +21,14 @@ export interface GenerationBackend {
 
 export type BackendSelection = { readonly ok: true; readonly backend: GenerationBackend } | { readonly ok: false; readonly reason: string };
 
-// `backendFromEnv` is added in Task 5 once the Gemini backend exists (it needs both).
+export function backendFromEnv(env: NodeJS.ProcessEnv = process.env): BackendSelection {
+  const mode = env.GENERATION_MODE ?? "gemini";
+  if (mode === "paste") return { ok: true, backend: createPasteBackend() };
+  if (mode !== "gemini") return { ok: false, reason: `config: GENERATION_MODE must be gemini or paste, got "${mode}"` };
+  const apiKey = env.GEMINI_API_KEY;
+  if (!apiKey) return { ok: false, reason: "config: GEMINI_API_KEY not set" };
+  return {
+    ok: true,
+    backend: createGeminiBackend({ apiKey, imageModel: env.GEMINI_IMAGE_MODEL ?? GEMINI_DEFAULTS.imageModel, visionModel: env.GEMINI_VISION_MODEL ?? GEMINI_DEFAULTS.visionModel }),
+  };
+}
