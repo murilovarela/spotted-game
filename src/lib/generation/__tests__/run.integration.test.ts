@@ -9,6 +9,7 @@ import { MAX_GENERATION_ATTEMPTS, normalized } from "@/lib/types";
 import type { GenerationBackend } from "../backend";
 import { createPasteBackend } from "../paste";
 import { runGeneration, startGeneration, type RunDeps } from "../run";
+import { STALE_REASON } from "../status";
 
 const { db, close } = createTestDb();
 afterAll(close);
@@ -90,6 +91,55 @@ describe("startGeneration", () => {
     const second = await startGeneration(db, master, id, new Date());
     expect(second.ok).toBe(true);
     if (second.ok) expect(second.data.attemptNumber).toBe(2);
+  });
+});
+
+describe("startGeneration guards", () => {
+  it("finalizes a stale run before starting a new one", async () => {
+    const id = await draft(master);
+    const stale = await startGeneration(db, master, id, new Date(Date.now() - 11 * 60_000));
+    if (!stale.ok) throw new Error(stale.message);
+    const next = await startGeneration(db, master, id, new Date());
+    expect(next.ok).toBe(true);
+    const rows = await db.select().from(generationRuns).where(eq(generationRuns.gameId, id)).orderBy(generationRuns.attemptNumber);
+    expect(rows[0].status).toBe("failed");
+    expect(rows[0].failureReason).toBe(STALE_REASON);
+    expect(rows[0].finishedAt).not.toBeNull();
+    expect(rows[1].status).toBe("queued");
+  });
+  it("refuses a second loop while one is running on another of the master's games", async () => {
+    const a = await draft(master);
+    const b = await draft(master);
+    expect((await startGeneration(db, master, a, new Date())).ok).toBe(true);
+    expect(await startGeneration(db, master, b, new Date())).toMatchObject({
+      ok: false,
+      error: "INVALID_INPUT",
+      message: "A generation is already running on another of your games",
+    });
+  });
+  it("does not let a stale running row on another of the master's games block a start", async () => {
+    const a = await draft(master);
+    const b = await draft(master);
+    const stale = await startGeneration(db, master, a, new Date(Date.now() - 11 * 60_000));
+    expect(stale.ok).toBe(true);
+    expect((await startGeneration(db, master, b, new Date())).ok).toBe(true);
+  });
+  it("enforces the daily cap across the master's games", async () => {
+    const a = await draft(master);
+    const paste = createPasteBackend();
+    for (let i = 0; i < 2; i++) {
+      const s = await startGeneration(db, master, a, new Date(), { dailyCap: 2 });
+      if (!s.ok) throw new Error(s.message);
+      await runGeneration(db, a, s.data.runId, { ok: true, backend: paste }, deps);
+    }
+    expect(await startGeneration(db, master, a, new Date(), { dailyCap: 2 })).toMatchObject({
+      ok: false,
+      message: "Daily generation limit reached (2 attempts per 24 h)",
+    });
+    // another master is unaffected
+    const [other] = await db.insert(users).values({ id: "m2", email: "m2@test", name: "M2" }).returning();
+    const c = await draft(other);
+    expect((await startGeneration(db, other, c, new Date(), { dailyCap: 2 })).ok).toBe(true);
   });
 });
 

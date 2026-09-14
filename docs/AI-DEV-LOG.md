@@ -844,6 +844,87 @@ floor, at the cost of re-tuning against the foliage noise the golden set showed.
 
 ---
 
+## Phase 4 — Deploy: the site goes live
+
+Branch `phase-4/deploy`, ten commits including this entry. Design in
+`docs/specs/2026-09-14-phase-4-deploy-design.md`, plan in
+`docs/plans/2026-09-14-phase-4-deploy.md`, runbook in `docs/DEPLOY.md`.
+
+### What we set out to do
+
+Put the game on the internet at `https://spotted.murilovarela.dev`, with only the code
+changes a deployment actually needs. The owner drew the line at three prerequisites and
+said no to everything else on the wish list (leaderboard on the master page, upload size
+caps, the remaining Phase 3 gaps): image URLs that stop changing every render, a per-user
+cap on generation so one account cannot spend the Gemini budget, and finalization for
+generation rows that a killed serverless function leaves marked "running" forever.
+
+### What we decided and why
+
+The first deploy went from the CLI; after it the owner linked the repository so that
+merges to `main` deploy on their own. The owner set every secret in the dashboard; the
+agent only ever ran `npx vercel --prod`, once. Migrations
+and the seed against production are the owner's to run — the agent never holds a
+production connection string. Clerk stays on its development instance, because the
+alternative (a production instance with a custom domain and Google OAuth credentials) was
+a day of console work for no change to the game.
+
+Presigned URLs became stable by signing them with an hour-bucketed date
+(`presignGet(key, now)` in `src/lib/storage.ts`, expiry two hours). The alternative was
+to cache the URLs per request; the bucket approach needs no state, and the integration
+reviewer confirmed on the live site that Neon storage accepts a signing date 31 minutes
+in the past. Along the way the first implementation had a one-line bug that the task
+reviewer caught: `unique.map(presignGet)` passes the array index as the second argument,
+so every URL would have been signed with the date `0`, `1`, `2`.
+
+The generation guard grew a lock. `startGeneration` already locked the game row; the task
+reviewer pointed out that two of the same master's games could each pass the
+"live elsewhere" check at the same moment and both start, so the transaction now locks the
+master's `users` row first (`af22944`). Lock order `users → games` was checked against every
+other transaction for cycles; there are none. The daily cap counts every attempt row —
+retries included — in a rolling 24 hours, default 20, `GENERATION_DAILY_CAP` to change it.
+
+### What broke
+
+The runbook was written before the facts were checked. It told the owner to add the
+site's origin to the bucket's CORS rules and to set `NEXT_PUBLIC_APP_URL`; the bucket
+already allowed `*`, and nothing in the code read that variable. The owner said "don't
+think there's cors allowed origins for the free plan", which was the prompt to look.
+Both were removed (`c8ab20d`), and the reviewer later found the same disease in
+`docs/SYSTEM.md` §6: it cited a dev-log section and an evidence file that had never
+existed, with a coffee-mug trace that was invented. That section now carries the real
+Teddy bear / Blue sneaker rows from `generation_runs` (`ed00987`).
+
+The Vercel project defaulted to Node 24 while everything local and in CI is Node 22;
+`engines.node: "22.x"` in `package.json` pinned the build. The first curl smoke of
+`/games` returned 404 rather than a redirect — Clerk's development instance rewrites
+requests without its dev-browser cookie — which is not a bug but cost ten minutes.
+
+The integration reviewer's other HIGH finding was procedural: the runbook seeded as the
+owner *before* running Playwright, but Playwright's global setup reseeds under the e2e
+user and its authoring spec publishes the seeded draft. On a production database that
+shares the development branch — which it does, for now — every local `npm run test:e2e`
+rewrites the demo games. The steps were swapped and the hazard written down.
+
+### What changed because of it
+
+Production serves the branch's code; the E2E suite ran against it in remote mode
+(`PLAYWRIGHT_BASE_URL`, 7 of 7, generation spec skipped) and the reviewer verified from
+outside that an active game's payload carries no coordinates, that draft and scheduled
+games 404, and that the CORS preflight from the production origin succeeds. Security
+review found nothing; all six invariants hold with a `file:line` per path. Left with the
+owner: reseed as themselves, one play from a second Google account, one real generation on
+Vercel — the first time `sharp` runs there.
+
+### Where this leaves us
+
+The product is live and every functional phase is merged. The database still shares the
+development branch, which is the first thing to change before real players arrive. The
+next phase is the one the owner has been waiting to say out loud: the UI is unstyled and
+the flows are bare, and shadcn/ui is the chosen way to fix that.
+
+---
+
 ## Autonomous loop evidence
 
 ### Loop 1 — Generation retry (product)
@@ -934,3 +1015,4 @@ Mirrors the table in SYSTEM.md §7. Each row started as a correction given twice
 | 2026-09-13 | A skipped CI job is not a passing one | `integration` job publishes its own `status`; report renders `skipped` |
 | 2026-09-13 | Reviewers see one task; some defects span tasks | Whole-branch review before merge (dedupe, key ownership, name leak) |
 | 2026-09-13 | File-write hooks are bypassed by shell writes | *Open.* Guard should also match `Bash` and inspect the command for protected paths |
+| 2026-09-14 | Runbook claims must be checked against the environment before being written | *Open.* The integration-reviewer brief now asks for a docs-vs-deployment pass; no automated check |
