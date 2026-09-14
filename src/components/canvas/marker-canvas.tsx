@@ -70,7 +70,7 @@ export function MarkerCanvas(props: MarkerCanvasProps) {
   const coarse = useCoarsePointer();
   const hit = coarse ? 2.4 : 1;
   const readOnly = mode === "reveal";
-  const dotR = image.width * 0.015;
+  const dotR = image.width * 0.008;
   const stroke = Math.max(2, image.width * 0.003);
   const rect = (): Rect => svgRef.current?.getBoundingClientRect() ?? NO_RECT;
   const find = (id: string) => markers.find((m) => m.id === id);
