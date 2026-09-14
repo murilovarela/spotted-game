@@ -115,8 +115,12 @@ matching the server's draft-only rules. Errors keep the `?error=` code protocol;
 
 - Unit: `publishBlockers`, `steps` (done/todo derivation), `LocalTime` formatting;
   coverage ratchet holds.
-- E2E: existing suite passes unchanged (all test ids and roles in the Phase 5
-  inventory preserved). New: confirm dialog traps focus and closes on Esc; play page at
+- E2E: existing suite passes unchanged. Test ids preserved: `marker-canvas`
+  (`data-mode`), `marker`, `radius-handle`, `object-rail`, `object-chip`, `timer`,
+  `trash-zone`, `submit`, `marker-count`, `confirm-submit`, `confirm-submit-yes`,
+  `result`, `leaderboard`, `generate`, `generation-state`, `generation-run`; roles
+  `button` (Start, Publish, Confirm, Save window, Create, Add object), `link` ("Sign in
+  to start"), `alert`, `dialog`. New: confirm dialog traps focus and closes on Esc; play page at
   390×844 has no horizontal scroll and Submit is visible without scrolling; publish
   blockers are listed while Publish is disabled and disappear once confirmed.
 - Visual: `qa-playwright` screenshots (phone + desktop) of start/play/result and the
