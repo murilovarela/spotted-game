@@ -21,7 +21,7 @@ export type CanvasMarker = {
   readonly confirmed?: boolean;
 };
 
-export type MarkerCanvasProps = {
+type MarkerCanvasProps = {
   readonly image: GameImage;
   readonly mode: CanvasMode;
   readonly markers: readonly CanvasMarker[];
@@ -101,6 +101,12 @@ export function MarkerCanvas(props: MarkerCanvasProps) {
     setOverTrash(false);
   }
 
+  /** A cancelled pointer (touch interrupted, capture lost) discards the gesture; nothing is committed. */
+  function cancelDrag() {
+    setDrag(null);
+    setOverTrash(false);
+  }
+
   function onKeyDown(e: KeyboardEvent<SVGGElement>, m: CanvasMarker) {
     if (readOnly) return;
     const d = ARROWS[e.key as keyof typeof ARROWS];
@@ -150,7 +156,7 @@ export function MarkerCanvas(props: MarkerCanvasProps) {
               onPointerDown={(e) => startDrag(e, m.id, "center")}
               onPointerMove={onPointerMove}
               onPointerUp={endDrag}
-              onPointerCancel={endDrag}
+              onPointerCancel={cancelDrag}
             >
               {radius !== null && (
                 <circle

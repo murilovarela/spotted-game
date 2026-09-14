@@ -48,7 +48,7 @@ export function PlayScreen({
   }
 
   return (
-    <main className="mx-auto flex max-w-5xl flex-col gap-4 p-4">
+    <main className="mx-auto flex w-full max-w-5xl flex-col gap-4 p-4">
       <header className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">{title}</h1>
         <Timer startedAtMs={startedAtMs} serverNowMs={serverNowMs} />

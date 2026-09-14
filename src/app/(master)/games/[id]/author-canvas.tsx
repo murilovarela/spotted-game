@@ -1,5 +1,4 @@
 "use client";
-import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { DEFAULT_RADIUS } from "@/components/canvas/geometry";
 import { MarkerCanvas, type CanvasMarker } from "@/components/canvas/marker-canvas";
@@ -14,13 +13,13 @@ type Position = { readonly x: Normalized; readonly y: Normalized; readonly radiu
  * confirmed badge always reflects the geometry on screen.
  */
 export function AuthorCanvas({ gameId, image, objects, editable }: { gameId: string; image: GameImage; objects: readonly ObjectForMaster[]; editable: boolean }) {
-  const router = useRouter();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
   // Latest position this component has sent per object. A second gesture that lands before
-  // router.refresh() re-renders must build on what we just saved, not on the stale prop. This
+  // the action's revalidated tree re-renders must build on what we just saved, not on the stale
+  // prop. This
   // is state, not a ref: the repo's lint config (react-hooks/refs) forbids reading a ref during
   // render, and the reconciliation below has to run during render to avoid a stale-forever cache.
   // A failed send is forgotten immediately (see `save`) rather than left cached: the server
@@ -64,17 +63,20 @@ export function AuthorCanvas({ gameId, image, objects, editable }: { gameId: str
     setSent((m) => new Map(m).set(objectId, input));
     start(async () => {
       setError(null);
+      // `updateObjectAction` revalidates this page, so the action response already carries the
+      // re-rendered tree; no explicit refresh is needed.
       const r = await updateObjectAction(gameId, objectId, input);
       if (!r.ok) {
         setError(r.message);
+        // Forget only the send that failed: a later gesture on the same object may already
+        // have replaced the cached entry, and that one is still in flight.
         setSent((m) => {
-          if (!m.has(objectId)) return m;
+          if (m.get(objectId) !== input) return m;
           const next = new Map(m);
           next.delete(objectId);
           return next;
         });
       }
-      router.refresh();
     });
   }
 

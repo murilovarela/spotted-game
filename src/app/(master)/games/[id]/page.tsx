@@ -76,8 +76,11 @@ export default async function EditGamePage({
       <section>
         <h2 className="mb-2 font-medium">Background</h2>
         {game.backgroundUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={game.backgroundUrl} alt="" className="max-h-64 rounded" />
+          // Reserve the height up front so the page does not reflow when the (unsized) preview lands.
+          <div className="h-64">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={game.backgroundUrl} alt="" className="h-full w-auto rounded object-contain" />
+          </div>
         ) : (
           <p className="text-neutral-500">None yet.</p>
         )}

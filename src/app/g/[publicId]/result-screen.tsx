@@ -17,7 +17,7 @@ export function ResultScreen({
   leaderboard: readonly LeaderboardEntry[];
 }) {
   return (
-    <main className="mx-auto flex max-w-3xl flex-col gap-6 p-6">
+    <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-6">
       <h1 className="text-2xl font-semibold">{title}</h1>
       <p data-testid="result" className="text-lg">
         Found {result.foundCount} of {total} in <span className="font-mono">{formatElapsed(result.elapsedMs)}</span>
