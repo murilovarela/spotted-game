@@ -2,7 +2,7 @@
 
 ## Built
 
-- **Production** at `https://spotted.murilovarela.dev` (Vercel via `npx vercel --prod`;
+- **Production** at `https://spotted.murilovarela.dev` (Vercel Git integration deploys `main`;
   Clerk dev instance; the *development* Neon branch as database, for now). Runbook:
   `docs/DEPLOY.md`.
 - **Stable image URLs** — `presignGet(key, now)` in `src/lib/storage.ts` signs with an

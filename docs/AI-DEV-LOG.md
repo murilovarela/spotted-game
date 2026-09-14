@@ -861,8 +861,9 @@ generation rows that a killed serverless function leaves marked "running" foreve
 
 ### What we decided and why
 
-Deploy from the CLI, not from a Git integration. The owner linked the Vercel project and
-set every secret in the dashboard; the agent only ever ran `npx vercel --prod`. Migrations
+The first deploy went from the CLI; after it the owner linked the repository so that
+merges to `main` deploy on their own. The owner set every secret in the dashboard; the
+agent only ever ran `npx vercel --prod`, once. Migrations
 and the seed against production are the owner's to run — the agent never holds a
 production connection string. Clerk stays on its development instance, because the
 alternative (a production instance with a custom domain and Google OAuth credentials) was

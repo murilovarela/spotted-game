@@ -41,19 +41,23 @@ Nothing to do: the `assets` bucket is configured with `AllowedOrigins: ["*"]` (v
 any deployment origin. If that ever changes, the symptom is a CORS error in the browser on
 upload with a valid presigned URL.
 
-## 3. Deploy (agent)
+## 3. Deploy
 
 Production domain: `https://spotted.murilovarela.dev` (attached to the project; the parent
 zone is on Vercel nameservers, so no DNS records are needed).
 
+The repository is linked to the Vercel project: every merge to `main` builds and deploys
+production; every other branch gets a preview deployment. Nothing to run. The first
+deployment (before the link existed) was pushed from the CLI, which remains the manual
+path if the integration is ever off:
 
 ```bash
 npx vercel --prod
 ```
 
-Prints the deployment URL. This step alone does not touch the database or the bucket — the
-app deploys, but a fresh production database has no schema and no data yet, so nothing
-will work until steps 4–5 run.
+Deploying alone does not touch the database or the bucket — the app deploys, but a fresh
+production database has no schema and no data yet, so nothing will work until steps 4–5
+run.
 
 ## 4. Migrate + verify
 
