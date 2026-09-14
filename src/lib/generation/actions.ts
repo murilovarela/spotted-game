@@ -8,13 +8,13 @@ import { fail, ok, type ActionResult } from "@/lib/games/result";
 import { isUuid } from "@/lib/games/validation";
 import { getObject, putObject } from "@/lib/storage";
 import { backendFromEnv } from "./backend";
-import { runGeneration, startGeneration } from "./run";
+import { dailyCapFromEnv, runGeneration, startGeneration } from "./run";
 
 export async function startGenerationAction(gameId: string): Promise<ActionResult<{ attemptNumber: number }>> {
   if (!isUuid(gameId)) return fail("NOT_FOUND", "Game not found");
   const user = await getCurrentUser();
   if (!user) return fail("UNAUTHENTICATED", "Sign in first");
-  const started = await startGeneration(getDb(), user, gameId, new Date());
+  const started = await startGeneration(getDb(), user, gameId, new Date(), { dailyCap: dailyCapFromEnv() });
   if (!started.ok) return started;
   after(async () => {
     try {

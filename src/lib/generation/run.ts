@@ -3,7 +3,7 @@
  * before the backend is called and is finalized on every path, thrown errors included —
  * this table is the project's autonomous-loop evidence.
  */
-import { and, asc, eq, max } from "drizzle-orm";
+import { and, asc, count, eq, gte, inArray, max, ne } from "drizzle-orm";
 import type { Database } from "@/db";
 import { games, generationRuns, objects, type User } from "@/db/schema";
 import { setGeneratedImage } from "@/lib/games/games";
@@ -15,8 +15,17 @@ import type { BackendSelection } from "./backend";
 import { frameGeometry } from "./boxes";
 import { dimensions } from "./images";
 import { composePrompt, formatAdjustments, formatFailures } from "./prompt";
-import { deriveGenerationState } from "./status";
-import type { Adjustment, GameInput } from "./types";
+import { deriveGenerationState, STALE_REASON } from "./status";
+import { STALE_AFTER_MS, type Adjustment, type GameInput } from "./types";
+
+/** Platform-wide default when `GENERATION_DAILY_CAP` is unset or invalid. */
+export const DEFAULT_DAILY_CAP = 20;
+
+/** Reads `GENERATION_DAILY_CAP`; falls back to `DEFAULT_DAILY_CAP` for anything not a positive integer. */
+export function dailyCapFromEnv(env: Readonly<Record<string, string | undefined>> = process.env): number {
+  const n = Number(env.GENERATION_DAILY_CAP);
+  return Number.isInteger(n) && n > 0 ? n : DEFAULT_DAILY_CAP;
+}
 
 export type RunDeps = {
   now(): Date;
@@ -36,6 +45,7 @@ export async function startGeneration(
   user: User,
   gameId: string,
   now: Date,
+  opts: { dailyCap: number } = { dailyCap: DEFAULT_DAILY_CAP },
 ): Promise<ActionResult<{ runId: string; attemptNumber: number }>> {
   return db.transaction(async (tx) => {
     const [game] = await tx.select().from(games).where(eq(games.id, gameId)).for("update");
@@ -45,7 +55,34 @@ export async function startGeneration(
     const objs = await objectRows(tx, gameId);
     if (objs.length === 0) return fail("NO_OBJECTS", "Add at least one object");
     const runs = await tx.select().from(generationRuns).where(eq(generationRuns.gameId, gameId));
-    if (deriveGenerationState(runs, now).kind === "running") return fail("INVALID_INPUT", "A generation is already running");
+    const state = deriveGenerationState(runs, now);
+    if (state.kind === "running") return fail("INVALID_INPUT", "A generation is already running");
+    // 1. A stale run on this game is finalized here so the evidence table matches the panel.
+    if (state.kind === "failed" && state.reason === STALE_REASON) {
+      const staleRow = runs.find((r) => r.attemptNumber === state.attemptNumber);
+      if (staleRow && (staleRow.status === "running" || staleRow.status === "queued")) {
+        await tx
+          .update(generationRuns)
+          .set({ status: "failed", failureReason: STALE_REASON, finishedAt: now, durationMs: now.getTime() - staleRow.startedAt.getTime() })
+          .where(eq(generationRuns.id, staleRow.id));
+      }
+    }
+    // 2. One live loop per master, across all their games.
+    const liveElsewhere = await tx
+      .select({ id: generationRuns.id, startedAt: generationRuns.startedAt })
+      .from(generationRuns)
+      .innerJoin(games, eq(games.id, generationRuns.gameId))
+      .where(and(eq(games.masterId, user.id), ne(generationRuns.gameId, gameId), inArray(generationRuns.status, ["queued", "running"])));
+    if (liveElsewhere.some((r) => now.getTime() - r.startedAt.getTime() <= STALE_AFTER_MS)) {
+      return fail("INVALID_INPUT", "A generation is already running on another of your games");
+    }
+    // 3. Daily cap per master.
+    const [{ n }] = await tx
+      .select({ n: count() })
+      .from(generationRuns)
+      .innerJoin(games, eq(games.id, generationRuns.gameId))
+      .where(and(eq(games.masterId, user.id), gte(generationRuns.startedAt, new Date(now.getTime() - 24 * 3_600_000))));
+    if (n >= opts.dailyCap) return fail("INVALID_INPUT", `Daily generation limit reached (${opts.dailyCap} attempts per 24 h)`);
     const attemptNumber = runs.reduce((m, r) => Math.max(m, r.attemptNumber), 0) + 1;
     const [row] = await tx
       .insert(generationRuns)
