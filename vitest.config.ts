@@ -13,7 +13,14 @@ export default defineConfig({
       // The ratchet covers the pure shared core. Stream directories hold I/O (server
       // actions, API clients) that unit tests cannot reach; a stream that adds a pure
       // module opts it in by narrowing its own exclude here — a visible, reviewable act.
-      include: ["src/lib/**/*.ts"],
+      include: [
+        "src/lib/**/*.ts",
+        // Canvas pure layer (Phase 3): geometry, marker reducer, formatting. The components
+        // that use them are verified by Playwright, not by line coverage.
+        "src/components/canvas/geometry.ts",
+        "src/components/canvas/marker-state.ts",
+        "src/components/canvas/format.ts",
+      ],
       exclude: [
         "**/__tests__/**",
         "src/lib/games/**",
