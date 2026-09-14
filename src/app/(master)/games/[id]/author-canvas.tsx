@@ -6,6 +6,8 @@ import { MarkerCanvas, type CanvasMarker } from "@/components/canvas/marker-canv
 import { updateObjectAction } from "@/lib/games/actions";
 import { normalized, type GameImage, type Normalized, type ObjectForMaster } from "@/lib/types";
 
+type Position = { readonly x: Normalized; readonly y: Normalized; readonly radius: Normalized };
+
 /**
  * SPEC §3.1.6 / §5.4: the master adjusts proposals by dragging and confirms. Every gesture
  * ends in one `updateObjectAction` call, which resets `confirmed` (Phase 1 rule), so the
@@ -17,12 +19,46 @@ export function AuthorCanvas({ gameId, image, objects, editable }: { gameId: str
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
-  const placed: CanvasMarker[] = objects.flatMap((o) =>
-    o.x === null || o.y === null || o.radius === null ? [] : [{ id: o.id, x: o.x, y: o.y, radius: o.radius, label: o.label, confirmed: o.confirmed }],
-  );
+  // Latest position this component has sent per object. A second gesture that lands before
+  // router.refresh() re-renders must build on what we just saved, not on the stale prop. This
+  // is state, not a ref: the repo's lint config (react-hooks/refs) forbids reading a ref during
+  // render, and the reconciliation below has to run during render to avoid a stale-forever cache.
+  const [sent, setSent] = useState<ReadonlyMap<string, Position>>(new Map());
+  // Adjust state during render (React's documented alternative to an effect for this): once the
+  // objects prop actually changes identity, drop any cached entry the fresh props now agree
+  // with. Guarded by `objectsSeenAt` so this only runs when `objects` itself changes, not on
+  // every local re-render (selecting a chip, a save's own setSent, etc.).
+  const [objectsSeenAt, setObjectsSeenAt] = useState(objects);
+  if (objects !== objectsSeenAt) {
+    setObjectsSeenAt(objects);
+    const next = new Map(sent);
+    let changed = false;
+    for (const o of objects) {
+      const s = next.get(o.id);
+      if (s && o.x === s.x && o.y === s.y && o.radius === s.radius) {
+        next.delete(o.id);
+        changed = true;
+      }
+    }
+    if (changed) setSent(next);
+  }
+
+  const current = (id: string): Position | null => {
+    const s = sent.get(id);
+    if (s) return s;
+    const o = objects.find((obj) => obj.id === id);
+    if (!o || o.x === null || o.y === null || o.radius === null) return null;
+    return { x: o.x, y: o.y, radius: o.radius };
+  };
+
+  const placed: CanvasMarker[] = objects.flatMap((o) => {
+    const c = current(o.id);
+    return c ? [{ id: o.id, ...c, label: o.label, confirmed: sent.has(o.id) ? false : o.confirmed }] : [];
+  });
   const selectedUnplaced = objects.find((o) => o.id === selectedId && o.x === null) ?? null;
 
-  function save(objectId: string, input: { x: Normalized; y: Normalized; radius: Normalized }) {
+  function save(objectId: string, input: Position) {
+    setSent((m) => new Map(m).set(objectId, input));
     start(async () => {
       setError(null);
       const r = await updateObjectAction(gameId, objectId, input);
@@ -30,7 +66,6 @@ export function AuthorCanvas({ gameId, image, objects, editable }: { gameId: str
       router.refresh();
     });
   }
-  const byId = (id: string) => objects.find((o) => o.id === id);
 
   return (
     <div className="flex flex-col gap-3">
@@ -43,12 +78,12 @@ export function AuthorCanvas({ gameId, image, objects, editable }: { gameId: str
         onSelect={setSelectedId}
         onAdd={(p) => selectedUnplaced && save(selectedUnplaced.id, { x: p.x, y: p.y, radius: normalized(DEFAULT_RADIUS) })}
         onMove={(id, p) => {
-          const o = byId(id);
-          if (o?.radius != null) save(id, { x: p.x, y: p.y, radius: o.radius });
+          const c = current(id);
+          if (c) save(id, { x: p.x, y: p.y, radius: c.radius });
         }}
         onResize={(id, radius) => {
-          const o = byId(id);
-          if (o?.x != null && o.y != null) save(id, { x: o.x, y: o.y, radius });
+          const c = current(id);
+          if (c) save(id, { x: c.x, y: c.y, radius });
         }}
       />
       {editable && (
