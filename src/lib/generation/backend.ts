@@ -1,9 +1,13 @@
 /** The seam between the pipeline and any image/vision provider. */
 import { createGeminiBackend, GEMINI_DEFAULTS } from "./gemini";
 import { createPasteBackend } from "./paste";
-import type { Candidate, ComposeResult, GameInput, VisionLabel } from "./types";
+import type { Box, Candidate, ComposeResult, GameInput, LocateInput, LocateResult, VisionLabel } from "./types";
 
-type ComposeInput = GameInput & { readonly prompt: string };
+type ComposeInput = GameInput & {
+  readonly prompt: string;
+  /** Where the real background lies within `background` (normalized); the rest is letterbox fill. */
+  readonly content: Box;
+};
 export type LabelInput = {
   readonly game: GameInput;
   readonly scene: ComposeResult;
@@ -17,6 +21,12 @@ export interface GenerationBackend {
   readonly name: string;
   compose(input: ComposeInput): Promise<ComposeResult>;
   label(input: LabelInput): Promise<LabelResult>;
+  /**
+   * Fallback when the diff cannot see an object (frame re-rendered, or nothing changed
+   * where it went): ask where each listed object is. Optional; without it the old
+   * failures stand.
+   */
+  locate?(input: LocateInput): Promise<LocateResult>;
 }
 
 export type BackendSelection = { readonly ok: true; readonly backend: GenerationBackend } | { readonly ok: false; readonly reason: string };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { closestAspectRatio, insideMargin, overlapFraction, scaleRatio, toCircle } from "../boxes";
+import { fitRect, frameGeometry, insideMargin, outputFrameFor, overlapFraction, scaleRatio, toCircle } from "../boxes";
 
 const image = { width: 1000, height: 500 };
 
@@ -54,15 +54,51 @@ describe("scaleRatio", () => {
   });
 });
 
-describe("closestAspectRatio", () => {
-  it("picks the supported ratio nearest to the image's shape", () => {
-    expect(closestAspectRatio(1024, 768)).toBe("4:3");
-    expect(closestAspectRatio(1000, 1000)).toBe("1:1");
-    expect(closestAspectRatio(1920, 1080)).toBe("16:9");
-    expect(closestAspectRatio(768, 1024)).toBe("3:4");
+describe("outputFrameFor", () => {
+  it("returns the smallest 4:3 frame containing the image at native scale", () => {
+    expect(outputFrameFor({ width: 1024, height: 768 })).toEqual({ width: 1024, height: 768 });
+    expect(outputFrameFor({ width: 424, height: 538 })).toEqual({ width: 718, height: 538 }); // portrait: height kept
+    expect(outputFrameFor({ width: 1920, height: 1080 })).toEqual({ width: 1920, height: 1440 }); // wide: width kept
+    expect(outputFrameFor({ width: 896, height: 669 })).toEqual({ width: 896, height: 672 });
   });
-  it("snaps an unsupported ratio to the nearest one (1:2 → 9:16)", () => {
-    expect(closestAspectRatio(500, 1000)).toBe("9:16");
-    expect(closestAspectRatio(3000, 1000)).toBe("21:9");
+});
+
+describe("fitRect", () => {
+  it("is the whole frame when the shapes match", () => {
+    expect(fitRect({ width: 1024, height: 768 }, { width: 512, height: 384 })).toEqual({ x: 0, y: 0, w: 512, h: 384 });
+  });
+  it("centres a portrait image with side bands, integer pixels", () => {
+    expect(fitRect({ width: 424, height: 538 }, { width: 718, height: 538 })).toEqual({ x: 147, y: 0, w: 424, h: 538 });
+    // scaled down to a 512×384 grid: 538 → 384, 424 → 303
+    const r = fitRect({ width: 424, height: 538 }, { width: 512, height: 384 });
+    expect(r.h).toBe(384);
+    expect(r.w).toBe(303);
+    expect(r.x).toBe(Math.floor((512 - 303) / 2));
+    expect(r.y).toBe(0);
+  });
+  it("centres a wide image with top and bottom bands", () => {
+    expect(fitRect({ width: 1920, height: 1080 }, { width: 1024, height: 768 })).toEqual({ x: 0, y: 96, w: 1024, h: 576 });
+  });
+});
+
+describe("frameGeometry", () => {
+  it("is the whole frame with no voids for a 4:3 image", () => {
+    expect(frameGeometry({ width: 1024, height: 768 })).toEqual({ frame: { width: 1024, height: 768 }, content: { x: 0, y: 0, w: 1, h: 1 }, hasVoids: false });
+  });
+  it("reports voids and the content rect for a portrait image", () => {
+    const g = frameGeometry({ width: 424, height: 538 });
+    expect(g.frame).toEqual({ width: 718, height: 538 });
+    expect(g.content).toEqual({ x: 147 / 718, y: 0, w: 424 / 718, h: 1 });
+    expect(g.hasVoids).toBe(true);
+  });
+  it("ignores rounding bands under 1% of a side", () => {
+    // 1024×769 → frame 1026×769: a 2px band, 0.2% of the width — not worth a prompt line.
+    const g = frameGeometry({ width: 1024, height: 769 });
+    expect(g.frame).toEqual({ width: 1026, height: 769 });
+    expect(g.hasVoids).toBe(false);
+    // 896×669 (the golden set) → 896×672: 3px of 672.
+    expect(frameGeometry({ width: 896, height: 669 }).hasVoids).toBe(false);
+    // Exactly 1% counts.
+    expect(frameGeometry({ width: 990, height: 750 }).hasVoids).toBe(true); // frame 1000×750: 10px of 1000
   });
 });

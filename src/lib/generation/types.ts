@@ -5,10 +5,16 @@
 import type { Normalized } from "@/lib/types";
 
 export type Box = { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
-/** A changed region found by the pixel diff. `area` is the box's fraction of the frame. */
-export type Candidate = Box & { readonly area: number };
+/**
+ * A region for vision to label. `source` says where it came from: the pixel diff, or the
+ * vision model asked to locate an object the diff could not see. `area` is the box's
+ * fraction of the frame.
+ */
+export type Candidate = Box & { readonly area: number; readonly source: "diff" | "vision" };
 /** One vision assignment: candidate index → object (or null when the region is nothing we asked for). */
 export type VisionLabel = { readonly candidate: number; readonly objectId: string | null; readonly confidence: number };
+/** Where the vision model says an object is, when asked directly (the localisation fallback). */
+export type Location = { readonly objectId: string; readonly box: Box; readonly confidence: number };
 type Proposal = { readonly objectId: string; readonly x: Normalized; readonly y: Normalized; readonly radius: Normalized };
 
 type FailureClass = "background_altered" | "absent" | "low_confidence" | "overlap" | "out_of_bounds" | "scale" | "config" | "error" | "stale";
@@ -34,7 +40,11 @@ export type GameInput = {
   readonly objects: readonly ObjectInput[];
 };
 export type ComposeResult = { readonly png: Uint8Array; readonly width: number; readonly height: number };
+export type LocateInput = { readonly scene: ComposeResult; readonly objects: readonly ObjectInput[] };
+export type LocateResult = { readonly boxes: readonly Location[]; readonly raw: unknown };
 
+/** Every generated frame has this shape; the play canvas has one geometry to render. */
+export const OUTPUT_ASPECT = { w: 4, h: 3 } as const;
 export const CONFIDENCE_THRESHOLD = 0.6;
 export const FRAME_MARGIN = 0.03;
 export const MAX_OVERLAP = 0.2;
@@ -46,6 +56,8 @@ export const SCALE_TOLERANCE = 10;
  */
 export const MAX_CHANGED_FRACTION = 0.6;
 export const STALE_AFTER_MS = 10 * 60_000;
+/** Gaussian sigma applied to both frames before the diff, so grain and 1px shifts are not changes. */
+export const DIFF_BLUR_SIGMA = 1.5;
 /** Longest side of the background handed to the backend; larger uploads are downscaled first. */
 export const MAX_BACKGROUND_SIDE = 1536;
 /** Longest side of each object image handed to the backend. */

@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { readFileSync } from "node:fs";
+import sharp from "sharp";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestDb, truncateAll } from "@/db/test";
 import { games, generationRuns, objects, users, type User } from "@/db/schema";
@@ -26,11 +27,11 @@ const deps: RunDeps = {
   },
 };
 
-async function draft(master: User, objectCount = 2): Promise<string> {
+async function draft(master: User, objectCount = 2, background: Uint8Array = FIX("background.png")): Promise<string> {
   const g = await createGame(db, master, { title: "g", generalPrompt: "" });
   if (!g.ok) throw new Error(g.message);
   const bgKey = `games/${g.data.id}/background/bg.png`;
-  store.set(bgKey, FIX("background.png"));
+  store.set(bgKey, background);
   await updateGame(db, master, g.data.id, { backgroundKey: bgKey });
   for (let i = 0; i < objectCount; i++) {
     const key = `games/${g.data.id}/object/o${i}.png`;
@@ -103,10 +104,12 @@ describe("runGeneration", () => {
     expect(run.status).toBe("passed");
     expect(run.finishedAt).not.toBeNull();
     expect(run.durationMs).toBeGreaterThanOrEqual(0);
-    const evidence = run.visionResponse as { imageKey: string; width: number; height: number; candidates: unknown[]; labels: unknown[] };
+    const evidence = run.visionResponse as { imageKey: string; width: number; height: number; candidates: unknown[]; labels: unknown[]; raw: { locate: unknown } };
     expect(evidence.imageKey).toMatch(new RegExp(`^games/${id}/generated/`));
     expect(store.has(evidence.imageKey)).toBe(true);
     expect(evidence.candidates.length).toBeGreaterThanOrEqual(2);
+    // The diff found every object, so the localisation fallback was never asked.
+    expect(evidence.raw.locate).toBeNull();
 
     const [game] = await db.select().from(games).where(eq(games.id, id));
     expect(game.generatedImageKey).toBe(evidence.imageKey);
@@ -167,8 +170,11 @@ describe("runGeneration", () => {
     expect(run.visionResponse).toBeNull();
   });
 
-  it("records a thrown backend error on the row and stops", async () => {
-    const id = await draft(master);
+  it("records a thrown backend error on the row, with the prompt that was actually sent, and stops", async () => {
+    // A portrait background: the prompt sent carries the letterbox-band sentence, which the
+    // queued row (composed before the bytes were read) could not know about.
+    const portrait = new Uint8Array(await sharp({ create: { width: 300, height: 400, channels: 3, background: { r: 90, g: 90, b: 90 } } }).png().toBuffer());
+    const id = await draft(master, 2, portrait);
     const boom: GenerationBackend = { name: "boom", compose: async () => { throw new Error("quota exceeded"); }, label: async () => ({ labels: [], raw: null }) };
     const started = await startGeneration(db, master, id, new Date());
     if (!started.ok) throw new Error(started.message);
@@ -177,6 +183,7 @@ describe("runGeneration", () => {
     expect(runs).toHaveLength(1);
     expect(runs[0].status).toBe("failed");
     expect(runs[0].failureReason).toBe("error: quota exceeded");
+    expect(runs[0].promptUsed).toContain("The flat grey bands at the edges are empty space");
     expect(runs[0].finishedAt).not.toBeNull();
     expect(runs[0].durationMs).toBeGreaterThanOrEqual(0);
     expect(runs[0].visionResponse).toBeNull();

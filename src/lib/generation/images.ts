@@ -1,9 +1,12 @@
 /** The only module that touches sharp. Bytes in, bytes/RGBA out. */
 import sharp from "sharp";
 import type { ImageSize } from "@/lib/types";
+import { fitRect } from "./boxes";
 import type { Box } from "./types";
 
 const DIFF_MAX_SIDE = 512;
+/** Fill outside a letterboxed background: neutral, so the model has nothing to preserve there. */
+const LETTERBOX_FILL = { r: 128, g: 128, b: 128, alpha: 1 };
 
 export type ImageMime = "image/png" | "image/jpeg" | "image/webp";
 
@@ -54,10 +57,33 @@ export async function downscale(png: Uint8Array, maxSide: number): Promise<Uint8
   return new Uint8Array(buf);
 }
 
-/** Resize (stretch to exactly `size`) and decode. Used to bring background and output onto one grid. */
-export async function toRGBAAt(png: Uint8Array, size: ImageSize): Promise<Uint8Array> {
-  const buf = await sharp(png).resize(size.width, size.height, { fit: "fill" }).ensureAlpha().raw().toBuffer();
+/**
+ * Resize (stretch to exactly `size`) and decode. Used to bring background and output onto one
+ * grid. With `blurSigma`, a Gaussian blur is applied first so the diff sees changed content
+ * rather than re-encoding grain and one-pixel misalignments.
+ */
+export async function toRGBAAt(png: Uint8Array, size: ImageSize, blurSigma?: number): Promise<Uint8Array> {
+  let img = sharp(png).resize(size.width, size.height, { fit: "fill" });
+  if (blurSigma !== undefined) img = img.blur(blurSigma);
+  const buf = await img.ensureAlpha().raw().toBuffer();
   return new Uint8Array(buf);
+}
+
+/**
+ * Scale `png` to fit inside `size`, centre it on a neutral fill, and say which pixels are
+ * real: `mask[i] = 1` for the image, 0 for the fill. `inset` shrinks the mask by that many
+ * pixels on every side of the content, so a later blur cannot bleed fill into the compared area.
+ */
+export async function letterboxTo(png: Uint8Array, size: ImageSize, inset = 0): Promise<{ png: Uint8Array; mask: Uint8Array }> {
+  const rect = fitRect(await dimensions(png), size);
+  const content = await sharp(png).resize(rect.w, rect.h, { fit: "fill" }).png().toBuffer();
+  const out = await sharp({ create: { width: size.width, height: size.height, channels: 4, background: LETTERBOX_FILL } })
+    .composite([{ input: content, left: rect.x, top: rect.y }])
+    .png()
+    .toBuffer();
+  const mask = new Uint8Array(size.width * size.height);
+  for (let y = rect.y + inset; y < rect.y + rect.h - inset; y++) for (let x = rect.x + inset; x < rect.x + rect.w - inset; x++) mask[y * size.width + x] = 1;
+  return { png: new Uint8Array(out), mask };
 }
 
 /** Crop a normalized box out of a PNG (clamped to the frame). */
