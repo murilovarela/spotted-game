@@ -122,7 +122,7 @@ through `setGeneratedImage` + `confirmObject` so lock discipline holds.
 - CI job `e2e`: `needs: integration`, concurrency group `integration-neon`,
   `DATABASE_URL=${{ secrets.TEST_DATABASE_URL }}`, skips with `outputs.status=skipped`
   when any required secret is absent; uploads the Playwright report on failure.
-  `update-baseline` requires `e2e` to be `pass` or `skipped`.
+  `update-baseline` requires `e2e` to be `pass`.
 - No dashboard precondition. Secrets: `TEST_DATABASE_URL`, `AWS_*`,
   `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` (dev instance); optional
   `E2E_CLERK_USER_ID`.
