@@ -5,6 +5,23 @@ import type { Box } from "./types";
 
 export const DIFF_MAX_SIDE = 512;
 
+export type ImageMime = "image/png" | "image/jpeg" | "image/webp";
+
+/** Sniff the container from magic bytes; null for anything that is not PNG/JPEG/WebP. */
+export function mimeOf(bytes: Uint8Array): ImageMime | null {
+  if (bytes.length >= 4 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return "image/png";
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  const ascii = (at: number, s: string) => bytes.length >= at + s.length && s.split("").every((ch, i) => bytes[at + i] === ch.charCodeAt(0));
+  if (ascii(0, "RIFF") && ascii(8, "WEBP")) return "image/webp";
+  return null;
+}
+
+/** PNG in → same bytes out; anything else is transcoded so downstream never guesses the container. */
+export async function toPng(bytes: Uint8Array): Promise<Uint8Array> {
+  if (mimeOf(bytes) === "image/png") return bytes;
+  return new Uint8Array(await sharp(bytes).png().toBuffer());
+}
+
 export async function dimensions(png: Uint8Array): Promise<ImageSize> {
   const m = await sharp(png).metadata();
   if (!m.width || !m.height) throw new Error("images: cannot read dimensions");

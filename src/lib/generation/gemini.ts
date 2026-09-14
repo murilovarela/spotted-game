@@ -4,14 +4,19 @@
  */
 import { GoogleGenAI, Type } from "@google/genai";
 import type { GenerationBackend } from "./backend";
-import { dimensions } from "./images";
+import { dimensions, mimeOf, toPng } from "./images";
 import { parseLabels } from "./labels";
 
 export type GeminiConfig = { readonly apiKey: string; readonly imageModel: string; readonly visionModel: string };
-export const GEMINI_DEFAULTS = { imageModel: "gemini-3.1-flash-image", visionModel: "gemini-3.6-flash" } as const;
+export const GEMINI_DEFAULTS = {
+  imageModel: "gemini-3.1-flash-image",
+  // `gemini-3.1-flash` does not exist as a served id and `gemini-2.5-flash` is retired for new keys (both 404).
+  visionModel: "gemini-3.6-flash",
+} as const;
 
 const b64 = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64");
-const png = (bytes: Uint8Array) => ({ inlineData: { mimeType: "image/png", data: b64(bytes) } });
+/** Uploads may be PNG, JPEG or WebP: declare what the bytes actually are. */
+const inline = (bytes: Uint8Array) => ({ inlineData: { mimeType: mimeOf(bytes) ?? "image/png", data: b64(bytes) } });
 
 export function createGeminiBackend(cfg: GeminiConfig): GenerationBackend {
   const ai = new GoogleGenAI({ apiKey: cfg.apiKey });
@@ -21,8 +26,8 @@ export function createGeminiBackend(cfg: GeminiConfig): GenerationBackend {
       const parts = [
         { text: input.prompt },
         { text: "Background image:" },
-        png(input.background),
-        ...[...input.objects].sort((a, b) => a.sortOrder - b.sortOrder).flatMap((o, i) => [{ text: `Object ${i + 1} (${o.label}):` }, png(o.image)]),
+        inline(input.background),
+        ...[...input.objects].sort((a, b) => a.sortOrder - b.sortOrder).flatMap((o, i) => [{ text: `Object ${i + 1} (${o.label}):` }, inline(o.image)]),
       ];
       const res = await ai.models.generateContent({
         model: cfg.imageModel,
@@ -31,8 +36,13 @@ export function createGeminiBackend(cfg: GeminiConfig): GenerationBackend {
       });
       const part = res.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data);
       const data = part?.inlineData?.data;
-      if (!data) throw new Error(`gemini: no image in response (${res.candidates?.[0]?.finishReason ?? "no candidate"})`);
-      const bytes = new Uint8Array(Buffer.from(data, "base64"));
+      if (!data) {
+        const block = res.promptFeedback?.blockReason;
+        const why = `${res.candidates?.[0]?.finishReason ?? "no candidate"}${block ? `, blocked: ${block}` : ""}`;
+        throw new Error(`gemini: no image in response (${why})`);
+      }
+      // The model may answer in JPEG/WebP; ComposeResult.png is always PNG.
+      const bytes = await toPng(new Uint8Array(Buffer.from(data, "base64")));
       // Nano Banana output is not dimensionally guaranteed: read what came back.
       const size = await dimensions(bytes);
       return { png: bytes, ...size };
@@ -49,9 +59,9 @@ export function createGeminiBackend(cfg: GeminiConfig): GenerationBackend {
           ].join(" "),
         },
         { text: "Scene:" },
-        png(scene.png),
-        ...crops.flatMap((c, i) => [{ text: `Candidate ${i}:` }, png(c)]),
-        ...game.objects.flatMap((o) => [{ text: `Object id="${o.id}" label="${o.label}":` }, png(o.image)]),
+        inline(scene.png),
+        ...crops.flatMap((c, i) => [{ text: `Candidate ${i}:` }, inline(c)]),
+        ...game.objects.flatMap((o) => [{ text: `Object id="${o.id}" label="${o.label}":` }, inline(o.image)]),
       ];
       const res = await ai.models.generateContent({
         model: cfg.visionModel,

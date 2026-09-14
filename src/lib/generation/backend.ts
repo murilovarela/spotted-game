@@ -21,7 +21,10 @@ export interface GenerationBackend {
 
 export type BackendSelection = { readonly ok: true; readonly backend: GenerationBackend } | { readonly ok: false; readonly reason: string };
 
-export function backendFromEnv(env: NodeJS.ProcessEnv = process.env): BackendSelection {
+/** The env keys the selector reads; `process.env` satisfies it, and tests pass a plain object. */
+export type GenerationEnv = Readonly<Record<string, string | undefined>>;
+
+export function backendFromEnv(env: GenerationEnv = process.env): BackendSelection {
   const mode = env.GENERATION_MODE ?? "gemini";
   if (mode === "paste") return { ok: true, backend: createPasteBackend() };
   if (mode !== "gemini") return { ok: false, reason: `config: GENERATION_MODE must be gemini or paste, got "${mode}"` };
