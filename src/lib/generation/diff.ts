@@ -128,9 +128,23 @@ export function mergeBoxes(boxes: readonly PixelBox[], gap: number): PixelBox[] 
   return current;
 }
 
-export function diffRegions(bg: Uint8Array, gen: Uint8Array, width: number, height: number, opts: DiffOptions = DIFF_DEFAULTS): Candidate[] {
+/** Zero every pixel of `mask` where `keep` is 0. */
+function restrict(mask: Uint8Array, keep: Uint8Array): Uint8Array {
+  for (let i = 0; i < mask.length; i++) if (keep[i] === 0) mask[i] = 0;
+  return mask;
+}
+
+/**
+ * `keep` (1 = real background pixel, 0 = void) restricts the diff to where a comparison
+ * makes sense: the model's outpainted fill outside a letterboxed background is never a
+ * change, and a change is never allowed to spread into it.
+ */
+export function diffRegions(bg: Uint8Array, gen: Uint8Array, width: number, height: number, opts: DiffOptions = DIFF_DEFAULTS, keep?: Uint8Array): Candidate[] {
+  if (keep && keep.length !== width * height) throw new Error(`diff: mask size ${keep.length} does not match ${width}×${height}`);
   let mask = diffMask(bg, gen, width, height, opts.threshold);
+  if (keep) mask = restrict(mask, keep);
   for (let i = 0; i < opts.dilations; i++) mask = dilate(mask, width, height);
+  if (keep) mask = restrict(mask, keep);
   const minPixels = opts.minAreaFraction * width * height;
   const boxes = components(mask, width, height).filter((c) => c.pixels >= minPixels);
   const gapPx = Math.round(opts.mergeGap * Math.max(width, height));

@@ -47,6 +47,18 @@ describe("placeObjects", () => {
     expect(b.h).toBeCloseTo((0.2 * 2 * image.width) / image.height, 10);
     expect(placeObjects([{ id: "a", requestedScale: null, aspect: 1 }], image, "s")[0].w).toBeCloseTo(0.12, 10);
   });
+  it("confines boxes to an allowed area, margin scaled to the area", () => {
+    const area = { x: 0.2, y: 0, w: 0.6, h: 1 }; // a portrait background letterboxed into a landscape frame
+    for (let s = 0; s < 50; s++) {
+      const boxes = placeObjects(five.slice(0, 3), image, `area-${s}`, { margin: 0.1, gap: PLACEMENT_GAP, maxTries: 500, area });
+      for (const b of boxes) {
+        expect(b.x).toBeGreaterThanOrEqual(0.2 + 0.06 - 1e-9);
+        expect(b.x + b.w).toBeLessThanOrEqual(0.8 - 0.06 + 1e-9);
+        expect(b.y).toBeGreaterThanOrEqual(0.1 - 1e-9);
+        expect(b.y + b.h).toBeLessThanOrEqual(0.9 + 1e-9);
+      }
+    }
+  });
   it("throws when nothing fits", () => {
     expect(() => placeObjects([{ id: "a", requestedScale: 0.9, aspect: 1 }], image, "s")).toThrow(/place/);
   });

@@ -4,11 +4,13 @@
  */
 import { GoogleGenAI, Type } from "@google/genai";
 import type { GenerationBackend } from "./backend";
-import { closestAspectRatio } from "./boxes";
 import { dimensions, mimeOf, toPng } from "./images";
 import { parseLabels } from "./labels";
+import { OUTPUT_ASPECT } from "./types";
 
 export type GeminiConfig = { readonly apiKey: string; readonly imageModel: string; readonly visionModel: string };
+/** SDK `ImageConfig`: `aspectRatio` from its documented list, `imageSize` one of "1K" | "2K" | "4K". */
+const IMAGE_CONFIG = { aspectRatio: `${OUTPUT_ASPECT.w}:${OUTPUT_ASPECT.h}`, imageSize: "1K" } as const;
 export const GEMINI_DEFAULTS = {
   imageModel: "gemini-3.1-flash-image",
   // `gemini-3.1-flash` does not exist as a served id and `gemini-2.5-flash` is retired for new keys (both 404).
@@ -30,12 +32,11 @@ export function createGeminiBackend(cfg: GeminiConfig): GenerationBackend {
         inline(input.background),
         ...[...input.objects].sort((a, b) => a.sortOrder - b.sortOrder).flatMap((o, i) => [{ text: `Object ${i + 1} (${o.label}):` }, inline(o.image)]),
       ];
-      // Ask for the background's shape; an output in another aspect would diff as a whole-frame change.
-      const bg = await dimensions(input.background);
+      // One fixed frame regardless of the upload's shape; the prompt tells the model to extend, not stretch.
       const res = await ai.models.generateContent({
         model: cfg.imageModel,
         contents: [{ role: "user", parts }],
-        config: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: closestAspectRatio(bg.width, bg.height) } },
+        config: { responseModalities: ["IMAGE"], imageConfig: IMAGE_CONFIG },
       });
       const part = res.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data);
       const data = part?.inlineData?.data;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import sharp from "sharp";
-import { dimensions, downscale, encodePng, mimeOf, toPng } from "../images";
+import { decodeRGBA, dimensions, downscale, encodePng, letterboxTo, mimeOf, toPng } from "../images";
 
 describe("mimeOf", () => {
   it("recognises PNG, JPEG and WebP by magic bytes and rejects the rest", async () => {
@@ -42,5 +42,35 @@ describe("downscale", () => {
     const out = await downscale(png, 1536);
     expect(mimeOf(out)).toBe("image/png");
     expect(await dimensions(out)).toEqual({ width: 1536, height: 768 });
+  });
+});
+
+describe("letterboxTo", () => {
+  async function red(width: number, height: number): Promise<Uint8Array> {
+    const data = new Uint8Array(width * height * 4);
+    for (let i = 0; i < width * height; i++) data.set([255, 0, 0, 255], i * 4);
+    return encodePng(data, { width, height });
+  }
+  it("fits a portrait image into a landscape grid with neutral side bands and a mask over the real pixels only", async () => {
+    const { png, mask } = await letterboxTo(await red(20, 40), { width: 40, height: 30 });
+    expect(await dimensions(png)).toEqual({ width: 40, height: 30 });
+    const { data } = await decodeRGBA(png);
+    // 20×40 scaled by 0.75 → 15×30, centred: columns 12..26 are content.
+    expect(Array.from(data.subarray((15 * 40 + 5) * 4, (15 * 40 + 5) * 4 + 3))).toEqual([128, 128, 128]);
+    expect(Array.from(data.subarray((15 * 40 + 20) * 4, (15 * 40 + 20) * 4 + 3))).toEqual([255, 0, 0]);
+    expect(mask).toHaveLength(40 * 30);
+    expect(mask.reduce((a, b) => a + b, 0)).toBe(15 * 30);
+    expect(mask[15 * 40 + 11]).toBe(0);
+    expect(mask[15 * 40 + 12]).toBe(1);
+    expect(mask[15 * 40 + 26]).toBe(1);
+    expect(mask[15 * 40 + 27]).toBe(0);
+  });
+  it("marks the whole grid when the shapes already match, minus an optional inset", async () => {
+    const full = await letterboxTo(await red(40, 30), { width: 40, height: 30 });
+    expect(full.mask.every((v) => v === 1)).toBe(true);
+    const { mask } = await letterboxTo(await red(40, 30), { width: 40, height: 30 }, 2);
+    expect(mask.reduce((a, b) => a + b, 0)).toBe((40 - 4) * (30 - 4));
+    expect(mask[2 * 40 + 1]).toBe(0);
+    expect(mask[2 * 40 + 2]).toBe(1);
   });
 });

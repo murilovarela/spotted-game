@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { closestAspectRatio, insideMargin, overlapFraction, scaleRatio, toCircle } from "../boxes";
+import { fitRect, insideMargin, outputFrameFor, overlapFraction, scaleRatio, toCircle } from "../boxes";
 
 const image = { width: 1000, height: 500 };
 
@@ -54,15 +54,29 @@ describe("scaleRatio", () => {
   });
 });
 
-describe("closestAspectRatio", () => {
-  it("picks the supported ratio nearest to the image's shape", () => {
-    expect(closestAspectRatio(1024, 768)).toBe("4:3");
-    expect(closestAspectRatio(1000, 1000)).toBe("1:1");
-    expect(closestAspectRatio(1920, 1080)).toBe("16:9");
-    expect(closestAspectRatio(768, 1024)).toBe("3:4");
+describe("outputFrameFor", () => {
+  it("returns the smallest 4:3 frame containing the image at native scale", () => {
+    expect(outputFrameFor({ width: 1024, height: 768 })).toEqual({ width: 1024, height: 768 });
+    expect(outputFrameFor({ width: 424, height: 538 })).toEqual({ width: 718, height: 538 }); // portrait: height kept
+    expect(outputFrameFor({ width: 1920, height: 1080 })).toEqual({ width: 1920, height: 1440 }); // wide: width kept
+    expect(outputFrameFor({ width: 896, height: 669 })).toEqual({ width: 896, height: 672 });
   });
-  it("snaps an unsupported ratio to the nearest one (1:2 → 9:16)", () => {
-    expect(closestAspectRatio(500, 1000)).toBe("9:16");
-    expect(closestAspectRatio(3000, 1000)).toBe("21:9");
+});
+
+describe("fitRect", () => {
+  it("is the whole frame when the shapes match", () => {
+    expect(fitRect({ width: 1024, height: 768 }, { width: 512, height: 384 })).toEqual({ x: 0, y: 0, w: 512, h: 384 });
+  });
+  it("centres a portrait image with side bands, integer pixels", () => {
+    expect(fitRect({ width: 424, height: 538 }, { width: 718, height: 538 })).toEqual({ x: 147, y: 0, w: 424, h: 538 });
+    // scaled down to a 512×384 grid: 538 → 384, 424 → 303
+    const r = fitRect({ width: 424, height: 538 }, { width: 512, height: 384 });
+    expect(r.h).toBe(384);
+    expect(r.w).toBe(303);
+    expect(r.x).toBe(Math.floor((512 - 303) / 2));
+    expect(r.y).toBe(0);
+  });
+  it("centres a wide image with top and bottom bands", () => {
+    expect(fitRect({ width: 1920, height: 1080 }, { width: 1024, height: 768 })).toEqual({ x: 0, y: 96, w: 1024, h: 576 });
   });
 });

@@ -2,7 +2,7 @@
  * The compose prompt and the SPEC §5.3 failure → adjustment table. Pure: the prompt is a
  * function of (game, objects, adjustments), so a retry is never a blind retry.
  */
-import type { Adjustment, Failure } from "./types";
+import { type Adjustment, type Failure, OUTPUT_ASPECT } from "./types";
 
 export type PromptObject = { readonly id: string; readonly label: string; readonly prompt: string; readonly requestedScale: number | null; readonly sortOrder: number };
 export const DEFAULT_SCALE = 0.12;
@@ -15,6 +15,7 @@ export function composePrompt(game: { readonly generalPrompt: string }, objects:
   lines.push("You are compositing objects into a supplied scene for a hidden-object game.");
   lines.push(`Scene: ${game.generalPrompt.trim() || "as supplied"}`);
   lines.push("The first image is the background. Keep it exactly as supplied: do not move, remove or restyle existing elements. Blend each object in naturally (lighting, shadows, perspective).");
+  lines.push(`The output is a ${OUTPUT_ASPECT.w}:${OUTPUT_ASPECT.h} landscape frame. If the supplied background has a different shape, extend the scene naturally to fill the frame; do not crop or stretch it.`);
   lines.push("Objects to place, one per following image, in this order:");
   sorted.forEach((o, i) => {
     const placement = o.prompt.trim() || "placed somewhere plausible";

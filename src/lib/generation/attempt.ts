@@ -1,7 +1,7 @@
 /** One attempt of the SPEC §5.3 pipeline, given a backend. Shared by run.ts and the eval. */
 import type { GenerationBackend } from "./backend";
 import { DIFF_DEFAULTS, diffRegions } from "./diff";
-import { cropPng, diffScale, downscale, toRGBAAt } from "./images";
+import { cropPng, diffScale, downscale, letterboxTo, toRGBAAt } from "./images";
 import { adjustmentFor, composePrompt, mergeAdjustments } from "./prompt";
 import { type Adjustment, type Candidate, type ComposeResult, type GameInput, MAX_BACKGROUND_SIDE, MAX_CHANGED_FRACTION, MAX_OBJECT_SIDE, type ValidationResult, type VisionLabel } from "./types";
 import { changedFraction, validate } from "./validate";
@@ -31,10 +31,13 @@ export async function attemptOnce(backend: GenerationBackend, game: GameInput, a
   const image = await backend.compose({ ...bounded, prompt });
   // The diff compares the generated image with the *original* background on one grid, so the
   // candidates — and every coordinate downstream — stay normalized against the generated image.
+  // The background is letterboxed into that grid the way the model was asked to extend it; the
+  // mask keeps the outpainted fill bands out of the comparison.
   const size = { width: image.width, height: image.height };
   const small = diffScale(size);
-  const [gen, bg] = await Promise.all([toRGBAAt(image.png, small), toRGBAAt(game.background, small)]);
-  const candidates = diffRegions(bg, gen, small.width, small.height, { ...DIFF_DEFAULTS, maxCandidates: 2 * game.objects.length });
+  const boxed = await letterboxTo(game.background, small);
+  const [gen, bg] = await Promise.all([toRGBAAt(image.png, small), toRGBAAt(boxed.png, small)]);
+  const candidates = diffRegions(bg, gen, small.width, small.height, { ...DIFF_DEFAULTS, maxCandidates: 2 * game.objects.length }, boxed.mask);
 
   // Vision is only worth calling when there is something to label and the background survived:
   // with nothing changed every object is `absent`, and with most of the frame changed `validate`

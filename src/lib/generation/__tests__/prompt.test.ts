@@ -16,6 +16,7 @@ describe("composePrompt", () => {
     expect(p).toContain("1. Coffee mug — on the counter, half behind the kettle — about 10% of the image width");
     expect(p).toContain("2. Rubber duck — placed somewhere plausible");
     expect(p).toContain("do not move, remove or restyle");
+    expect(p).toContain("The output is a 4:3 landscape frame. If the supplied background has a different shape, extend the scene naturally to fill the frame; do not crop or stretch it.");
   });
   it("appends adjustments, object ones under their object and scene ones at the end", () => {
     const p = composePrompt(game, objects, [

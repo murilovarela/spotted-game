@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeRGBA, dimensions, encodePng } from "../images";
+import { decodeRGBA, dimensions, encodePng, letterboxTo } from "../images";
 import { createPasteBackend } from "../paste";
 import { diffRegions } from "../diff";
 
@@ -10,7 +10,7 @@ async function solid(width: number, height: number, rgb: [number, number, number
 }
 
 describe("paste backend", () => {
-  it("composites objects at its own placements and labels the matching candidates", async () => {
+  it("composites onto the background letterboxed to 4:3, inside the real area, and labels the matching candidates", async () => {
     const background = await solid(200, 100, [120, 120, 120]);
     const sprite = await solid(10, 10, [255, 0, 0]);
     const game = {
@@ -25,11 +25,19 @@ describe("paste backend", () => {
     };
     const backend = createPasteBackend();
     const scene = await backend.compose({ ...game, prompt: "ignored" });
-    expect(await dimensions(scene.png)).toEqual({ width: 200, height: 100 });
-    const bg = await decodeRGBA(background);
+    // 200×100 is wider than 4:3: the frame keeps the width and adds bands top and bottom.
+    expect(scene).toMatchObject({ width: 200, height: 150 });
+    expect(await dimensions(scene.png)).toEqual({ width: 200, height: 150 });
+    const boxed = await letterboxTo(background, { width: 200, height: 150 });
+    const bg = await decodeRGBA(boxed.png);
     const gen = await decodeRGBA(scene.png);
-    const candidates = diffRegions(bg.data, gen.data, 200, 100);
+    const candidates = diffRegions(bg.data, gen.data, 200, 150, undefined, boxed.mask);
     expect(candidates.length).toBeGreaterThanOrEqual(2);
+    // Every pasted object sits on real background (rows 25..124 of 150), not in a band.
+    for (const c of candidates) {
+      expect(c.y).toBeGreaterThanOrEqual(25 / 150);
+      expect(c.y + c.h).toBeLessThanOrEqual(125 / 150);
+    }
     const { labels } = await backend.label({ game, scene, candidates, crops: [] });
     expect(labels.map((l) => l.objectId).sort()).toEqual(["a", "b"]);
     for (const l of labels) expect(l.confidence).toBe(1);

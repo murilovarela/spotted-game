@@ -98,6 +98,27 @@ describe("diffRegions", () => {
     const gen = frame(100, 100, grey, rects);
     expect(diffRegions(bg, gen, 100, 100, { ...DIFF_DEFAULTS, mergeGap: 0, maxCandidates: 4 })).toHaveLength(4);
   });
+  it("never marks masked-out pixels: a change inside a void band is not a candidate", () => {
+    const bg = frame(100, 100, grey);
+    // Void bands 20px wide on the left and right (letterbox fill); a change entirely within the left band.
+    const mask = new Uint8Array(100 * 100);
+    for (let y = 0; y < 100; y++) for (let x = 20; x < 80; x++) mask[y * 100 + x] = 1;
+    const inBand = frame(100, 100, grey, [{ x: 2, y: 10, w: 15, h: 80, c: red }]);
+    expect(diffRegions(bg, inBand, 100, 100, DIFF_DEFAULTS, mask)).toEqual([]);
+    // A change straddling the band edge is clipped to the real-background side.
+    const straddling = frame(100, 100, grey, [{ x: 10, y: 40, w: 30, h: 10, c: red }]);
+    const [c, ...rest] = diffRegions(bg, straddling, 100, 100, { ...DIFF_DEFAULTS, dilations: 0 }, mask);
+    expect(rest).toEqual([]);
+    expect(c.x).toBeCloseTo(0.2, 10);
+    expect(c.w).toBeCloseTo(0.2, 10);
+    // Without the mask the same change is one box starting in the band.
+    expect(diffRegions(bg, straddling, 100, 100, { ...DIFF_DEFAULTS, dilations: 0 })[0].x).toBeCloseTo(0.1, 10);
+  });
+  it("yields no candidates for identical frames under a mask, and rejects a mask of the wrong size", () => {
+    const bg = frame(50, 50, grey);
+    expect(diffRegions(bg, bg, 50, 50, DIFF_DEFAULTS, new Uint8Array(50 * 50).fill(1))).toEqual([]);
+    expect(() => diffRegions(bg, bg, 50, 50, DIFF_DEFAULTS, new Uint8Array(10))).toThrow(/mask/);
+  });
   it("throws on mismatched buffer sizes", () => {
     expect(() => diffRegions(new Uint8Array(16), new Uint8Array(32), 2, 2)).toThrow(/size/);
   });

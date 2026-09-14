@@ -35,6 +35,8 @@ export type GameInput = {
 };
 export type ComposeResult = { readonly png: Uint8Array; readonly width: number; readonly height: number };
 
+/** Every generated frame has this shape; the play canvas has one geometry to render. */
+export const OUTPUT_ASPECT = { w: 4, h: 3 } as const;
 export const CONFIDENCE_THRESHOLD = 0.6;
 export const FRAME_MARGIN = 0.03;
 export const MAX_OVERLAP = 0.2;
