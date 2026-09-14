@@ -26,11 +26,11 @@ Approved in chat 2026-09-14. Argues from `docs/SPEC.md` §5.3, §5.4, §6.4–6.
 | `status.ts` | yes | `deriveGenerationState(runs, now)` → `idle \| running \| passed \| failed{reason, attempts}`; `running` > 10 min ⇒ `failed: stale` |
 | `images.ts` | sharp | decode→RGBA, resize to dims, downscale for diff (longest side ≤ 512), bound backend inputs (`downscale`: background ≤ 1536, object images ≤ 512 on the long side), crop, encode PNG |
 | `backend.ts` | — | `GenerationBackend { compose(input) → {png, width, height}; label(scene, candidates, objects) → VisionLabel[] }`; `backendFromEnv()` |
-| `gemini.ts` | I/O | `@google/genai`; `GEMINI_IMAGE_MODEL` (default `gemini-3.1-flash-image`), `GEMINI_VISION_MODEL` (default `gemini-3.1-flash`); JSON-schema vision output |
+| `gemini.ts` | I/O | `@google/genai`; `GEMINI_IMAGE_MODEL` (default `gemini-3.1-flash-image`), `GEMINI_VISION_MODEL` (default `gemini-3.6-flash` — `3.1-flash` does not exist, `2.5-flash` is retired); JSON-schema vision output |
 | `paste.ts` | placement pure, composite sharp | seeded PRNG by `gameId`; margin 10 %; no overlap; width = `(requestedScale ?? 0.12) × W`; `label` = known boxes, confidence 1 |
 | `attempt.ts` | I/O-free given a backend | `attemptOnce(backend, input, adjustments) → AttemptOutcome` — bound inputs, compose, diff, label (skipped when the changed regions exceed 60 % of the frame), validate; used by `run.ts` and the eval |
 | `run.ts` | DB | `runGeneration(db, gameId, backend, deps)` — the loop, persists every attempt, `setGeneratedImage` on pass |
-| `actions.ts` | server | `startGenerationAction(gameId)`, `getGenerationStateAction(gameId)` |
+| `actions.ts` | server | `startGenerationAction(gameId)` (polling is `router.refresh()` from the panel; no state action) |
 
 ## The loop
 
