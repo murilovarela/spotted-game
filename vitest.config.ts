@@ -26,7 +26,15 @@ export default defineConfig({
       exclude: [
         "**/__tests__/**",
         "src/lib/games/**",
-        "src/lib/generation/**",
+        // Generation: I/O adapters and the DB loop are exercised by integration tests and
+        // the eval, not by unit coverage. The pure modules stay in the ratchet.
+        "src/lib/generation/images.ts",
+        "src/lib/generation/gemini.ts",
+        "src/lib/generation/paste.ts",
+        "src/lib/generation/backend.ts",
+        "src/lib/generation/attempt.ts",
+        "src/lib/generation/run.ts",
+        "src/lib/generation/actions.ts",
         "src/lib/auth.ts",
         "src/lib/storage.ts",
       ],
