@@ -116,7 +116,8 @@ export default async function EditGamePage({
             <ObjectRow key={o.id} gameId={id} object={o} editable={editable} />
           ))}
         </ul>
-        {editable && game.objects.length < MAX_OBJECTS_PER_GAME && <AddObjectForm gameId={id} action={addObject} />}
+        {/* Keyed on the count so the form remounts — and drops the previous upload key — after each add. */}
+        {editable && game.objects.length < MAX_OBJECTS_PER_GAME && <AddObjectForm key={game.objects.length} gameId={id} action={addObject} />}
       </section>
 
       <section>

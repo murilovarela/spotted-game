@@ -18,17 +18,13 @@ test("upload → generate → confirm → publish", async ({ page }) => {
   await page.getByLabel("Upload background").setInputFiles(`${FIX}/background.png`);
   await expect(page.locator("img[alt='']").first()).toBeVisible();
 
-  // The add-object form keeps its client state across the same-route redirect that follows a
-  // submit, so "Add object" is already enabled on the second pass with the previous key. Wait
-  // for the upload itself — the hidden key input changing — before submitting.
-  const keyInput = page.locator("input[name='sourceImageKey']");
+  // The form remounts after each add (keyed on the object count), so "Add object" is disabled
+  // again until the next upload has produced a key.
+  const add = page.getByRole("button", { name: /add object/i });
   for (const [i, label] of ["Red ball", "Green box"].entries()) {
+    await expect(add).toBeDisabled();
     await page.getByLabel(/^label/i).fill(label);
-    const previousKey = await keyInput.inputValue();
     await page.getByLabel("Object image").setInputFiles(`${FIX}/object-${i + 1}.png`);
-    await expect(keyInput).not.toHaveValue(previousKey);
-    await expect(keyInput).not.toHaveValue("");
-    const add = page.getByRole("button", { name: /add object/i });
     await expect(add).toBeEnabled();
     await add.click();
     await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
