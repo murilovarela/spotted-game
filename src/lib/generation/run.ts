@@ -5,7 +5,7 @@
  */
 import { and, asc, count, eq, gte, inArray, max, ne } from "drizzle-orm";
 import type { Database } from "@/db";
-import { games, generationRuns, objects, type User } from "@/db/schema";
+import { games, generationRuns, objects, users, type User } from "@/db/schema";
 import { setGeneratedImage } from "@/lib/games/games";
 import { fail, ok, type ActionResult } from "@/lib/games/result";
 import { objectKey } from "@/lib/storage";
@@ -48,6 +48,9 @@ export async function startGeneration(
   opts: { dailyCap: number } = { dailyCap: DEFAULT_DAILY_CAP },
 ): Promise<ActionResult<{ runId: string; attemptNumber: number }>> {
   return db.transaction(async (tx) => {
+    // Serializes a master's starts across all their games (the live-elsewhere and daily-cap
+    // checks read other games' rows).
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, user.id)).for("update");
     const [game] = await tx.select().from(games).where(eq(games.id, gameId)).for("update");
     if (!game || game.masterId !== user.id) return fail("NOT_FOUND", "Game not found");
     if (game.publishedAt !== null) return fail("NOT_DRAFT", "Only a draft can be generated");

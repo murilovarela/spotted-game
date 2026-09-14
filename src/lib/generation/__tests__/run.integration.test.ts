@@ -117,6 +117,13 @@ describe("startGeneration guards", () => {
       message: "A generation is already running on another of your games",
     });
   });
+  it("does not let a stale running row on another of the master's games block a start", async () => {
+    const a = await draft(master);
+    const b = await draft(master);
+    const stale = await startGeneration(db, master, a, new Date(Date.now() - 11 * 60_000));
+    expect(stale.ok).toBe(true);
+    expect((await startGeneration(db, master, b, new Date())).ok).toBe(true);
+  });
   it("enforces the daily cap across the master's games", async () => {
     const a = await draft(master);
     const paste = createPasteBackend();
