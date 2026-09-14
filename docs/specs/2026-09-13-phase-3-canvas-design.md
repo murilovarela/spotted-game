@@ -105,9 +105,13 @@ through `setGeneratedImage` + `confirmObject` so lock discipline holds.
 
 ## E2E (`e2e/`, `playwright.config.ts`)
 
-- Test user `e2e+clerk_test@example.com` (Clerk test mode; code `424242`).
-- `global-setup.ts`: ensure the user exists (`clerkClient.users`), run the seed with
-  `SEED_MASTER_ID=<id>`, sign in via `@clerk/testing` (`email_code`), save `storageState`.
+- Auth via **Clerk sign-in tokens** (ticket strategy): works with a Google-only sign-in
+  configuration and needs no dashboard changes. `global-setup.ts`: (1) resolve the test
+  user — `E2E_CLERK_USER_ID` if set, else find-or-create `e2e@spotted.test` via
+  `clerkClient.users`; (2) run the seed with `SEED_MASTER_ID=<id>`; (3) mint a token with
+  `clerkClient.signInTokens.createSignInToken({ userId, expiresInSeconds: 300 })`, open
+  the app with `setupClerkTestingToken`, sign in with `Clerk.signIn.create({ strategy:
+  "ticket", ticket })` + `setActive`, save `storageState`.
 - `webServer`: `npm run build && npm run start` (CI) / reuse dev server locally.
 - Specs: `play.spec.ts` (start → markers add/drag/trash → submit gated → confirm → result
   → leaderboard; **network assertion**: no response before Start contains `generated/`;
@@ -118,8 +122,9 @@ through `setGeneratedImage` + `confirmObject` so lock discipline holds.
   `DATABASE_URL=${{ secrets.TEST_DATABASE_URL }}`, skips with `outputs.status=skipped`
   when any required secret is absent; uploads the Playwright report on failure.
   `update-baseline` requires `e2e` to be `pass` or `skipped`.
-- Precondition (dashboard, dev instance): Email verification code enabled as a sign-in
-  method.
+- No dashboard precondition. Secrets: `TEST_DATABASE_URL`, `AWS_*`,
+  `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` (dev instance); optional
+  `E2E_CLERK_USER_ID`.
 
 ## Testing
 
