@@ -41,11 +41,11 @@ describe("placeObjects", () => {
       for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) expect(gapOf(boxes[i], boxes[j])).toBeGreaterThanOrEqual(PLACEMENT_GAP - 1e-9);
     }
   });
-  it("sizes each box from requestedScale (or 0.12) as a fraction of width, aspect-aware", () => {
+  it("sizes each box from requestedScale (or 0.06) as a fraction of width, aspect-aware", () => {
     const [b] = placeObjects([{ id: "a", requestedScale: 0.2, aspect: 2 }], image, "s"); // aspect = height/width of the sprite
     expect(b.w).toBeCloseTo(0.2, 10);
     expect(b.h).toBeCloseTo((0.2 * 2 * image.width) / image.height, 10);
-    expect(placeObjects([{ id: "a", requestedScale: null, aspect: 1 }], image, "s")[0].w).toBeCloseTo(0.12, 10);
+    expect(placeObjects([{ id: "a", requestedScale: null, aspect: 1 }], image, "s")[0].w).toBeCloseTo(0.06, 10);
   });
   it("confines boxes to an allowed area, margin scaled to the area", () => {
     const area = { x: 0.2, y: 0, w: 0.6, h: 1 }; // a portrait background letterboxed into a landscape frame
