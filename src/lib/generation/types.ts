@@ -9,17 +9,16 @@ export type Box = { readonly x: number; readonly y: number; readonly w: number; 
 export type Candidate = Box & { readonly area: number };
 /** One vision assignment: candidate index → object (or null when the region is nothing we asked for). */
 export type VisionLabel = { readonly candidate: number; readonly objectId: string | null; readonly confidence: number };
-export type Proposal = { readonly objectId: string; readonly x: Normalized; readonly y: Normalized; readonly radius: Normalized };
+type Proposal = { readonly objectId: string; readonly x: Normalized; readonly y: Normalized; readonly radius: Normalized };
 
-export const FAILURE_CLASSES = ["background_altered", "absent", "low_confidence", "overlap", "out_of_bounds", "scale", "config", "error", "stale"] as const;
-export type FailureClass = (typeof FAILURE_CLASSES)[number];
+type FailureClass = "background_altered" | "absent" | "low_confidence" | "overlap" | "out_of_bounds" | "scale" | "config" | "error" | "stale";
 export type Failure = { readonly objectId: string | null; readonly class: FailureClass; readonly detail: string };
 /** A prompt addition for the next attempt; `objectId` null = applies to the whole scene. */
 export type Adjustment = { readonly objectId: string | null; readonly text: string };
 
 export type ValidationResult = { readonly ok: true; readonly proposals: readonly Proposal[] } | { readonly ok: false; readonly failures: readonly Failure[] };
 
-export type ObjectInput = {
+type ObjectInput = {
   readonly id: string;
   readonly label: string;
   readonly prompt: string;

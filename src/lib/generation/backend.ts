@@ -3,7 +3,7 @@ import { createGeminiBackend, GEMINI_DEFAULTS } from "./gemini";
 import { createPasteBackend } from "./paste";
 import type { Candidate, ComposeResult, GameInput, VisionLabel } from "./types";
 
-export type ComposeInput = GameInput & { readonly prompt: string };
+type ComposeInput = GameInput & { readonly prompt: string };
 export type LabelInput = {
   readonly game: GameInput;
   readonly scene: ComposeResult;
@@ -11,7 +11,7 @@ export type LabelInput = {
   /** PNG crops of each candidate, same order. */
   readonly crops: readonly Uint8Array[];
 };
-export type LabelResult = { readonly labels: readonly VisionLabel[]; readonly raw: unknown };
+type LabelResult = { readonly labels: readonly VisionLabel[]; readonly raw: unknown };
 
 export interface GenerationBackend {
   readonly name: string;

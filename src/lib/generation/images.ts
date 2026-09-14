@@ -3,7 +3,7 @@ import sharp from "sharp";
 import type { ImageSize } from "@/lib/types";
 import type { Box } from "./types";
 
-export const DIFF_MAX_SIDE = 512;
+const DIFF_MAX_SIDE = 512;
 
 export type ImageMime = "image/png" | "image/jpeg" | "image/webp";
 

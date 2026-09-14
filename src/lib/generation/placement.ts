@@ -6,7 +6,7 @@ import type { Box } from "./types";
 
 export type PlaceableObject = { readonly id: string; readonly requestedScale: number | null; /** sprite height / width */ readonly aspect: number };
 export type PlacementOptions = { readonly margin: number; readonly gap: number; readonly maxTries: number };
-export const PLACEMENT_DEFAULTS: PlacementOptions = { margin: 0.1, gap: 0.02, maxTries: 500 };
+const PLACEMENT_DEFAULTS: PlacementOptions = { margin: 0.1, gap: 0.02, maxTries: 500 };
 
 /** mulberry32 seeded from an FNV-1a hash of the string. */
 export function seededRandom(seed: string): () => number {
