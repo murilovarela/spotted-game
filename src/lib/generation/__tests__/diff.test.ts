@@ -69,7 +69,7 @@ describe("diffRegions", () => {
     const gen = frame(100, 50, grey, [{ x: 10, y: 5, w: 20, h: 10, c: red }]);
     const [c, ...rest] = diffRegions(bg, gen, 100, 50);
     expect(rest).toEqual([]);
-    // dilation grows the box by up to 2px per side; assert within that tolerance
+    // one dilation pass (DIFF_DEFAULTS.dilations = 1) grows the box by 1px per side; assert within that tolerance
     expect(c.x).toBeGreaterThanOrEqual(0.08);
     expect(c.x).toBeLessThanOrEqual(0.1);
     expect(c.w).toBeGreaterThanOrEqual(0.2);

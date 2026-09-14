@@ -18,17 +18,17 @@ Approved in chat 2026-09-14. Argues from `docs/SPEC.md` §5.3, §5.4, §6.4–6.
 
 | File | Pure? | Responsibility |
 | --- | --- | --- |
-| `types.ts` | — | `Candidate {x,y,w,h,area}` (normalized), `VisionLabel {candidate, objectId, confidence}`, `Proposal`, `FailureClass = absent \| low_confidence \| overlap \| out_of_bounds \| scale \| config \| stale`, `Failure {objectId, class, detail}`, `AttemptOutcome` |
+| `types.ts` | — | `Candidate {x,y,w,h,area}` (normalized), `VisionLabel {candidate, objectId, confidence}`, `Proposal`, `FailureClass = background_altered \| absent \| low_confidence \| overlap \| out_of_bounds \| scale \| config \| error \| stale`, `Failure {objectId, class, detail}`, `AttemptOutcome` |
 | `prompt.ts` | yes | `composePrompt(game, objects, adjustments)`; `adjustmentFor(failure, object)` per SPEC §5.3 table |
 | `diff.ts` | yes | `diffRegions(bg, gen, w, h, opts = DIFF_DEFAULTS) → Candidate[]` over RGBA `Uint8Array` |
 | `validate.ts` | yes | SPEC predicate → `{ok:true, proposals} \| {ok:false, failures}` |
 | `boxes.ts` | yes | box→circle (aspect-aware radius in width units), overlap fraction, margin test, scale ratio |
 | `status.ts` | yes | `deriveGenerationState(runs, now)` → `idle \| running \| passed \| failed{reason, attempts}`; `running` > 10 min ⇒ `failed: stale` |
-| `images.ts` | sharp | decode→RGBA, resize to dims, downscale for diff (longest side ≤ 512), crop, encode PNG |
+| `images.ts` | sharp | decode→RGBA, resize to dims, downscale for diff (longest side ≤ 512), bound backend inputs (`downscale`: background ≤ 1536, object images ≤ 512 on the long side), crop, encode PNG |
 | `backend.ts` | — | `GenerationBackend { compose(input) → {png, width, height}; label(scene, candidates, objects) → VisionLabel[] }`; `backendFromEnv()` |
 | `gemini.ts` | I/O | `@google/genai`; `GEMINI_IMAGE_MODEL` (default `gemini-3.1-flash-image`), `GEMINI_VISION_MODEL` (default `gemini-3.1-flash`); JSON-schema vision output |
 | `paste.ts` | placement pure, composite sharp | seeded PRNG by `gameId`; margin 10 %; no overlap; width = `(requestedScale ?? 0.12) × W`; `label` = known boxes, confidence 1 |
-| `attempt.ts` | I/O-free given a backend | `attemptOnce(backend, input, adjustments) → AttemptOutcome` — compose, diff, label, validate; used by `run.ts` and the eval |
+| `attempt.ts` | I/O-free given a backend | `attemptOnce(backend, input, adjustments) → AttemptOutcome` — bound inputs, compose, diff, label (skipped when the changed regions exceed 60 % of the frame), validate; used by `run.ts` and the eval |
 | `run.ts` | DB | `runGeneration(db, gameId, backend, deps)` — the loop, persists every attempt, `setGeneratedImage` on pass |
 | `actions.ts` | server | `startGenerationAction(gameId)`, `getGenerationStateAction(gameId)` |
 
@@ -42,7 +42,12 @@ dims → `diffRegions` → objects with no candidate are `absent` before vision 
 `label` (raw response persisted in `visionResponse`) → `validate`. Pass: row `passed`,
 `setGeneratedImage(db, gameId, {key, width, height}, proposals)`, stop. Fail: row `failed`
 with `failureReason` = one line per failure (`class: <label> — detail`) and `adjustment` =
-the adjustments added for the next attempt; continue. Every thrown error inside the loop is
+the adjustments added for the next attempt; continue — unless the attempt added no new
+adjustment, in which case the prompt would be unchanged, the row gets
+`no new adjustment; not retrying` appended to its reason and the loop stops (a blind retry
+is not a recovery loop). Inputs handed to the backend are bounded first: background ≤ 1536,
+object images ≤ 512 on the long side; the diff still runs against the original background,
+so coordinates stay normalized against the generated image. Every thrown error inside the loop is
 caught and recorded on the current row (`failureReason: "error: …"`) — an unrecorded
 attempt did not happen. After the cap the state is `failed` with the last reason; the
 master edits prompts and starts a new request.
@@ -67,6 +72,9 @@ frame. Threshold 0.6.
 
 ## Validation (SPEC §5.3, in order per object)
 
+Scene-level first: when the merged candidates cover more than 60 % of the frame the
+background was re-rendered (`background_altered`) and that single failure replaces the
+per-object checks; vision is not called for such a frame. Then, per object:
 exactly one matched candidate (`absent`; a second match is dropped as a decoy) →
 `low_confidence` < 0.6 → box inside frame and outside the 3 % margin (`out_of_bounds`) →
 pairwise overlap ≤ 20 % of the smaller box (`overlap`) → when `requestedScale` is set, box
@@ -75,7 +83,8 @@ area within 10× either way of `requestedScale²` (`scale`). Proposal circle: bo
 
 ## Adjustments (SPEC §5.3 table)
 
-`absent` → restate placement explicitly, "clearly visible, larger"; `low_confidence` →
+`background_altered` → edit the supplied image in place, change nothing but the added
+objects; `absent` → restate placement explicitly, "clearly visible, larger"; `low_confidence` →
 "not occluded, fully in view"; `overlap` → "well separated, at least a fifth of the image
 apart"; `out_of_bounds` → "central 80 % of the frame"; `scale` → pin size relative to a
 named background element and "roughly X % of the image width". Adjustments accumulate per
