@@ -142,13 +142,20 @@ export async function runGeneration(db: Database, gameId: string, firstRunId: st
         await finish(db, runId, startedAt, deps, { status: "passed", visionResponse: evidence, promptUsed: outcome.prompt });
         return;
       }
+      // Image-pipeline non-negotiable: "a blind retry is not a recovery loop". A failure that
+      // adds no new adjustment would send the exact same prompt again, so the loop stops here
+      // and says so on the row; the attempt cap above only bounds runs whose prompt keeps changing.
+      const stalled = outcome.added.length === 0;
+      let failureReason = formatFailures(outcome.result.failures, input.objects);
+      if (stalled) failureReason += "\nno new adjustment; not retrying";
       await finish(db, runId, startedAt, deps, {
         status: "failed",
-        failureReason: formatFailures(outcome.result.failures, input.objects),
+        failureReason,
         adjustment: formatAdjustments(outcome.added),
         visionResponse: evidence,
         promptUsed: outcome.prompt,
       });
+      if (stalled) return;
       adjustments = outcome.adjustments;
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);

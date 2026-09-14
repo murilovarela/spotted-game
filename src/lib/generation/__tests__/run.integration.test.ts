@@ -127,7 +127,7 @@ describe("runGeneration", () => {
     expect(rows[0].promptUsed).toBe(run.promptUsed);
   });
 
-  it("with a backend whose labels never match: three failed rows with reasons and adjustments, then stops; image untouched", async () => {
+  it("with a backend whose labels never match: fails, retries once with the adjustment, then stops when nothing new is added; image untouched", async () => {
     const id = await draft(master);
     const paste = createPasteBackend();
     const silent: GenerationBackend = { name: "silent", compose: (i) => paste.compose(i), label: async () => ({ labels: [], raw: { silent: true } }) };
@@ -136,12 +136,15 @@ describe("runGeneration", () => {
     await runGeneration(db, id, started.data.runId, { ok: true, backend: silent }, deps);
 
     const runs = await db.select().from(generationRuns).where(eq(generationRuns.gameId, id)).orderBy(generationRuns.attemptNumber);
-    expect(runs.map((r) => r.status)).toEqual(Array(MAX_GENERATION_ATTEMPTS).fill("failed"));
+    // Attempt 2 carries attempt 1's adjustment and fails the same way, so it adds nothing new
+    // and the loop stops there rather than sending an unchanged prompt a third time.
+    expect(runs.length).toBeLessThan(MAX_GENERATION_ATTEMPTS);
+    expect(runs.map((r) => r.status)).toEqual(["failed", "failed"]);
     expect(runs[0].failureReason).toMatch(/^absent: Object 0 — /);
     expect(runs[0].adjustment).toContain("Place the Object 0");
-    // attempt 2's prompt carries attempt 1's adjustment; attempt 3 adds nothing new (deduped)
     expect(runs[1].promptUsed).toContain("Adjustment: Place the Object 0");
-    expect(runs[2].adjustment).toBeNull();
+    expect(runs[1].adjustment).toBeNull();
+    expect(runs[1].failureReason).toMatch(/no new adjustment; not retrying$/);
     for (const r of runs) {
       expect(r.finishedAt).not.toBeNull();
       expect(r.durationMs).toBeGreaterThanOrEqual(0);
