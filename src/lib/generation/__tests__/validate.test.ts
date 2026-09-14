@@ -54,16 +54,17 @@ describe("validate", () => {
     const r = validate(objects, [box(0.01, 0.5), box(0.6, 0.6)], [{ candidate: 0, objectId: "a", confidence: 0.9 }, { candidate: 1, objectId: "b", confidence: 0.9 }], image);
     expect(r).toEqual({ ok: false, failures: [{ objectId: "a", class: "out_of_bounds", detail: "box crosses the outer 3% margin" }] });
   });
+  // Dyadic values so the boundary is exact in IEEE 754 — no epsilon in the predicate.
   it("reports overlap above 20% for both objects, once each", () => {
-    const r = validate(objects, [box(0.2, 0.2), box(0.25, 0.2)], [{ candidate: 0, objectId: "a", confidence: 0.9 }, { candidate: 1, objectId: "b", confidence: 0.9 }], image);
+    const r = validate(objects, [box(0.125, 0.125, 0.3125, 0.3125), box(0.25, 0.125, 0.3125, 0.3125)], [{ candidate: 0, objectId: "a", confidence: 0.9 }, { candidate: 1, objectId: "b", confidence: 0.9 }], image);
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.failures.map((f) => [f.objectId, f.class])).toEqual([["a", "overlap"], ["b", "overlap"]]);
-      expect(r.failures[0].detail).toBe("Cup overlaps Duck by 50%");
+      expect(r.failures[0].detail).toBe("Cup overlaps Duck by 60%");
     }
   });
   it("accepts overlap at exactly 20%", () => {
-    const r = validate(objects, [box(0.2, 0.2), box(0.28, 0.2)], [{ candidate: 0, objectId: "a", confidence: 0.9 }, { candidate: 1, objectId: "b", confidence: 0.9 }], image);
+    const r = validate(objects, [box(0.125, 0.125, 0.3125, 0.3125), box(0.375, 0.125, 0.3125, 0.3125)], [{ candidate: 0, objectId: "a", confidence: 0.9 }, { candidate: 1, objectId: "b", confidence: 0.9 }], image);
     expect(r.ok).toBe(true);
   });
   it("reports scale when the area is more than 10× off the requested scale, either way", () => {

@@ -59,7 +59,7 @@ export function validate(
       const a = passed[i];
       const b = passed[j];
       const f = overlapFraction(matched.get(a.id) as Box, matched.get(b.id) as Box);
-      if (f <= MAX_OVERLAP + 1e-9) continue;
+      if (f <= MAX_OVERLAP) continue;
       const pct = `${Math.round(f * 100)}%`;
       if (!overlapped.has(a.id)) failures.push({ objectId: a.id, class: "overlap", detail: `${a.label} overlaps ${b.label} by ${pct}` });
       if (!overlapped.has(b.id)) failures.push({ objectId: b.id, class: "overlap", detail: `${b.label} overlaps ${a.label} by ${pct}` });
