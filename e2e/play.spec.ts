@@ -99,14 +99,25 @@ test("plays a seeded game to a scored submission", async ({ page }) => {
   await submit.click();
   await expect(page.getByTestId("confirm-submit")).toBeVisible();
   // Bound to the confirm click and narrowed to a server action so no other POST can satisfy it.
-  const submitResponse = page.waitForResponse(
-    (r) => r.request().method() === "POST" && r.url().includes(url) && r.request().headers()["next-action"] !== undefined,
-  );
+  // The action's response is intercepted and fetched here rather than read off the wire:
+  // in a production build the streamed text/x-component body is discarded as soon as the
+  // router applies it, and `response.text()` throws "No data found for resource".
+  let submitBody: string | null = null;
+  let submitStatus = 0;
+  const isSubmitAction = (r: { method(): string; url(): string; headers(): Record<string, string> }) =>
+    r.method() === "POST" && r.url().includes(url) && r.headers()["next-action"] !== undefined;
+  await page.route(`**${url}`, async (route) => {
+    if (!isSubmitAction(route.request())) return route.continue();
+    const fetched = await route.fetch();
+    submitStatus = fetched.status();
+    submitBody = await fetched.text();
+    await route.fulfill({ response: fetched, body: submitBody });
+  });
   await page.getByTestId("confirm-submit-yes").click();
-  const response = await submitResponse;
-  expect(response.status()).toBe(200);
-  const body = await response.text();
-  expect(body).not.toMatch(/"radius"|"[xy]":\s*\d/);
+  await expect.poll(() => submitBody !== null, "submit action was never sent").toBe(true);
+  await page.unroute(`**${url}`);
+  expect(submitStatus).toBe(200);
+  expect(submitBody).not.toMatch(/"radius"|"[xy]":\s*\d/);
 
   await expect(page.getByTestId("result")).toContainText("Found 3 of 3");
   await expect(page.getByTestId("marker")).toHaveCount(0); // the result shows the bare image (SPEC §3.3.7)

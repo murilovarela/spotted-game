@@ -460,7 +460,7 @@ not break are the first section in it.
 
 ## Phase 3 — Canvas stream
 
-Branch `stream/canvas`, 23 commits, one session. Plan: `docs/plans/2026-09-13-phase-3-canvas.md`;
+Branch `stream/canvas`, 25 commits, one session. Plan: `docs/plans/2026-09-13-phase-3-canvas.md`;
 design: `docs/specs/2026-09-13-phase-3-canvas-design.md`; handoff: `docs/handoffs/phase-3.md`.
 
 ### What we set out to do
@@ -547,6 +547,16 @@ key-up — with one more E2E assertion for the handle click. The same review cau
 seed writing `published_at` in the future for scheduled games (the shifted `now` was
 applied to every window, not only past ones) and the CI `e2e` job checking four of its
 eight secrets; both one-line fixes.
+
+The first CI run with real secrets failed the play spec twice, on assertions that had
+passed locally against `next dev`. In a production build, Next streams a server action's
+response and the browser discards the body the moment the router applies it, so
+Playwright's `response.text()` returned nothing — first silently (the leak detector's
+positive control "never fired"), then loudly (`No data found for resource`) on the submit
+response. The fixes: the positive control now gates on the image *request URL*, which the
+browser must send either way; and the submit response is intercepted with `page.route`,
+fetched in full by the test, and then handed to the page. The suite now runs against
+`next build && next start` locally with `CI=1` before it is pushed.
 
 Two subagents skipped the manual browser check because they had no signed-in session. The
 E2E suite, written next, became the first end-to-end run of the play surface — and passed
