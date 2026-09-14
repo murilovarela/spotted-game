@@ -266,10 +266,78 @@ jobs:
           echo "::warning::TEST_DATABASE_URL secret not set; integration tests skipped"
           echo "status=skipped" >> "$GITHUB_OUTPUT"
 
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    needs: [integration]
+    concurrency:
+      group: integration-neon
+      cancel-in-progress: false
+    outputs:
+      status: ${{ steps.run.outputs.status || steps.skip.outputs.status }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - id: secrets
+        shell: bash
+        env:
+          DB: ${{ secrets.TEST_DATABASE_URL }}
+          AWS: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          CLERK: ${{ secrets.CLERK_SECRET_KEY }}
+          PK: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+        run: |
+          if [ -n "$DB" ] && [ -n "$AWS" ] && [ -n "$CLERK" ] && [ -n "$PK" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install Chromium
+        if: steps.secrets.outputs.present == 'true'
+        run: npx playwright install --with-deps chromium
+      - name: Run Playwright
+        id: run
+        if: steps.secrets.outputs.present == 'true'
+        shell: bash
+        env:
+          CI: "1"
+          # The test branch, already migrated by the integration job.
+          DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+          DATABASE_URL_UNPOOLED: ${{ secrets.TEST_DATABASE_URL_UNPOOLED }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_ENDPOINT_URL_S3: ${{ secrets.AWS_ENDPOINT_URL_S3 }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          NEXT_PUBLIC_CLERK_SIGN_IN_URL: /sign-in
+          NEXT_PUBLIC_CLERK_SIGN_UP_URL: /sign-up
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
+          E2E_CLERK_USER_ID: ${{ secrets.E2E_CLERK_USER_ID }}
+        run: |
+          npm run test:e2e
+          echo "status=pass" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        if: failure() && steps.secrets.outputs.present == 'true'
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+      - name: Secrets not configured
+        id: skip
+        if: steps.secrets.outputs.present == 'false'
+        shell: bash
+        run: |
+          echo "::warning::E2E skipped: needs TEST_DATABASE_URL, AWS_*, NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY, CLERK_SECRET_KEY"
+          echo "status=skipped" >> "$GITHUB_OUTPUT"
+
   report:
     name: Quality Report
     runs-on: ubuntu-latest
-    needs: [lint, typecheck, test, secrets, audit, duplication, security, unused, integration]
+    needs: [lint, typecheck, test, secrets, audit, duplication, security, unused, integration, e2e]
     if: always() && github.event_name == 'pull_request'
     permissions:
       contents: read
@@ -296,6 +364,7 @@ jobs:
           UNUSED_STATUS: ${{ needs.unused.outputs.status }}
           UNUSED_COUNT: ${{ needs.unused.outputs.count }}
           INTEGRATION_STATUS: ${{ needs.integration.outputs.status }}
+          E2E_STATUS: ${{ needs.e2e.outputs.status }}
         with:
           script: |
             const fs = require('fs');
@@ -331,6 +400,7 @@ jobs:
               { name: 'security',    status: process.env.SECURITY_STATUS,    prev: baseline.securityErrors, curr: process.env.SECURITY_ERRORS,   unit: 'errors',     lower: true  },
               { name: 'unused',      status: process.env.UNUSED_STATUS,      prev: baseline.unusedExports,  curr: process.env.UNUSED_COUNT,      unit: 'issues',     lower: true  },
               { name: 'integration', status: process.env.INTEGRATION_STATUS === 'pass' ? 'pass' : process.env.INTEGRATION_STATUS === 'skipped' ? 'skipped' : 'fail', prev: null, curr: null, unit: null },
+              { name: 'e2e',         status: process.env.E2E_STATUS === 'pass' ? 'pass' : process.env.E2E_STATUS === 'skipped' ? 'skipped' : 'fail', prev: null, curr: null, unit: null },
             ];
 
             const rows = checks.map(c =>
@@ -372,7 +442,7 @@ jobs:
   update-baseline:
     name: Update Quality Baseline
     runs-on: ubuntu-latest
-    needs: [lint, typecheck, test, secrets, audit, duplication, security, unused, integration]
+    needs: [lint, typecheck, test, secrets, audit, duplication, security, unused, integration, e2e]
     if: >-
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
@@ -384,7 +454,8 @@ jobs:
       needs.duplication.result == 'success' &&
       needs.security.result == 'success' &&
       needs.unused.result == 'success' &&
-      needs.integration.outputs.status == 'pass'
+      needs.integration.outputs.status == 'pass' &&
+      needs.e2e.outputs.status == 'pass'
     permissions:
       contents: write
     steps:
