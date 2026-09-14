@@ -9,6 +9,8 @@ const FIX = "src/db/seed/fixtures";
  * database under an `[e2e]` prefix; a published game has no delete path in the UI.
  */
 test("upload → generate → confirm → publish", async ({ page }) => {
+  test.skip(Boolean(process.env.PLAYWRIGHT_BASE_URL), "generation against a live server would call Gemini");
+
   await page.goto("/games/new");
   await page.getByLabel(/title/i).fill("[e2e] generated game");
   await page.getByLabel(/prompt/i).fill("A plain test scene.");
