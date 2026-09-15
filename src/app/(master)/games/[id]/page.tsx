@@ -81,7 +81,7 @@ export default async function EditGamePage({
   }
 
   return (
-    <div className="flex flex-col gap-6 pb-24">
+    <div className="flex flex-col gap-6 pb-44 sm:pb-24">
       <SavedToast ok={savedOk} />
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
