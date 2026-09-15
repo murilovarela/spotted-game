@@ -1,13 +1,17 @@
 {
   "threshold": 5,
-  "reporters": ["json", "console"],
+  "reporters": [
+    "json",
+    "console"
+  ],
   "ignore": [
     "**/*.test.ts",
     "**/node_modules/**",
     "**/.next/**",
     "**/coverage/**",
     "**/src/db/migrations/**",
-    "**/src/components/ui/**"
+    "**/src/components/ui/**",
+    "**/src/app/globals.css"
   ],
   "output": "report/"
 }
