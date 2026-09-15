@@ -36,7 +36,10 @@ test("confirm dialog traps focus and closes on Escape", async ({ page }) => {
   await expect(dialog).toHaveCount(0);
 });
 
-test("play page fits a phone: no horizontal scroll, Submit and Timer visible without scrolling", async ({ page, isMobile }) => {
+test("play page fits a phone: no horizontal scroll, Submit and Timer visible without scrolling", async ({
+  page,
+  isMobile,
+}) => {
   test.skip(!isMobile, "mobile project only");
   const s = seed();
   await page.goto(`/g/${s.theirs.active.publicId}`);
@@ -48,7 +51,11 @@ test("play page fits a phone: no horizontal scroll, Submit and Timer visible wit
   await start.or(canvas).first().waitFor({ state: "visible" });
   if (await start.isVisible()) await start.click();
   await settled(canvas);
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  const overflow = await page.evaluate(
+    () =>
+      document.documentElement.scrollWidth -
+      document.documentElement.clientWidth,
+  );
   expect(overflow).toBe(0);
   await expect(page.getByTestId("submit")).toBeInViewport();
   await expect(page.getByTestId("timer")).toBeInViewport();
@@ -56,23 +63,45 @@ test("play page fits a phone: no horizontal scroll, Submit and Timer visible wit
 
 test("publish gate lists blockers and clears them", async ({ page }) => {
   const s = seed();
+
   await page.goto(`/games/${s.mine.draft.id}`);
+
   const canvas = page.getByTestId("marker-canvas");
+  const blockers = page.getByTestId("publish-blockers");
+  const publish = page.getByRole("button", { name: "Publish" });
+
+  const confirm = () =>
+    page
+      .getByRole("button", { name: "Confirm", exact: true })
+      .and(page.locator(":enabled"))
+      .first();
+
+  const clickConfirm = async () => {
+    const button = confirm();
+
+    await expect(button).toBeVisible();
+
+    await expect(button).toBeEnabled();
+    await button.click({ force: true });
+  };
+
   await settled(canvas);
 
-  // The seeded draft starts with one object already unconfirmed (see author.spec.ts).
-  // Nudging the first marker commits a position write, un-confirming a second object.
+  // The seeded draft starts with one object already unconfirmed.
+  // Moving a marker commits a second unconfirmed object.
   const marker = page.getByTestId("marker").first();
   await marker.focus();
   await page.keyboard.press("ArrowRight");
-  await expect(page.getByText("Saving…")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Publish" })).toBeDisabled();
-  await expect(page.getByTestId("publish-blockers")).toContainText(/confirm 2 objects/i);
 
-  const confirm = () => page.getByRole("button", { name: "Confirm", exact: true }).and(page.locator(":enabled")).first();
-  await confirm().click();
-  await expect(page.getByTestId("publish-blockers")).toContainText(/confirm 1 object/i);
-  await confirm().click();
-  await expect(page.getByTestId("publish-blockers")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Publish" })).toBeEnabled();
+  // This is the save synchronization point: wait for the committed result,
+  // rather than merely checking that a transient Saving indicator is absent.
+  await expect(blockers).toContainText(/confirm 2 objects/i);
+  await expect(publish).toBeDisabled();
+
+  await clickConfirm();
+  await expect(blockers).toContainText(/confirm 1 object/i);
+
+  await clickConfirm();
+  await expect(blockers).toHaveCount(0);
+  await expect(publish).toBeEnabled();
 });
