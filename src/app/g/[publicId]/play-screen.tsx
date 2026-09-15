@@ -55,11 +55,13 @@ export function PlayScreen({
   return (
     <div className="flex min-h-dvh flex-col">
       <PlayerBar>
-        <span className="text-sm text-muted-foreground">{title}</span>
-        <Badge data-testid="marker-count" variant="secondary" className="tabular-nums">
+        <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{title}</span>
+        <Badge data-testid="marker-count" variant="secondary" className="shrink-0 tabular-nums">
           {state.markers.length} / {total} markers
         </Badge>
-        <Timer startedAtMs={startedAtMs} serverNowMs={serverNowMs} />
+        <span className="shrink-0">
+          <Timer startedAtMs={startedAtMs} serverNowMs={serverNowMs} />
+        </span>
       </PlayerBar>
       <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-3 pb-20 lg:grid lg:grid-cols-[1fr_9rem] lg:gap-4 lg:px-4 lg:py-4">
         {/* Letterboxed at lg: sized from the image's own ratio so the whole image — and every

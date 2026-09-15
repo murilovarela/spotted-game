@@ -24,7 +24,10 @@ export default defineConfig({
     storageState: "e2e/.auth/user.json",
     trace: "retain-on-failure",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    { name: "mobile", use: { ...devices["iPhone 13"] }, testMatch: /ui\.spec\.ts/ },
+  ],
   webServer: REMOTE
     ? undefined
     : {
