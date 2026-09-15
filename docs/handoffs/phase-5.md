@@ -9,7 +9,7 @@
 - **Master flow** — `/games` card grid (lazy covers, `LocalTimeRange`); `/games/new` card;
   `/games/[id]` as ordered `StepCard`s (`steps.ts`: `deriveSteps`, `publishBlockers`, pure,
   tested) with a sticky `PublishBar` listing why Publish is disabled; Confirm on the object
-  chip in "Confirm positions"; `?ok=` → `SavedToast`.
+  chip in "Confirm positions". Success redirects carry no query (see below).
 - **Player flow** — start `Card` (no `image` prop), image-first `PlayScreen` (`PlayerBar`
   with timer + `n / N markers`, rail strip + `Sheet`, sticky trash + Submit, shadcn
   `Dialog` confirm), coarse-pointer hit circles (`useCoarsePointer`), `dotR` 0.008,
@@ -19,8 +19,9 @@
 
 ## Contracts exposed
 
-- `redirectBack(gameId, result, saved?: "window" | "position" | "object" | "background")`
-  appends `?ok=`; `isSavedWhat` guards it. Codes only in `?error=`, as before.
+- `redirectBack(gameId, result)`: codes only in `?error=`; never add a success query —
+  Next keys the page segment on search params, so it remounts every client component
+  (an in-flight object upload lost its key to a `?ok=` toast flag in CI).
 - `SubmitButton` (`pending || disabled`). `StatusBadge` renders the raw status word, once
   per page (strict e2e `getByText`).
 - `ObjectRail({ objects, variant? })` is a client component; `TrashZone` takes `className`;

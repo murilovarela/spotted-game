@@ -993,6 +993,18 @@ is — a consistency fix.
 
 The final whole-branch review died on Opus's weekly limit and re-ran on Sonnet.
 
+CI then failed where local runs had passed, and the trace told a story nobody had seen
+locally. Save-success redirects carried a `?ok=<what>` flag so a client component could
+fire a toast and strip it again; Next keys the page segment on its search params, so each
+of those two navigations remounted every client component on the page. In CI the object
+image's upload finished in that window and `AddObjectForm` forgot the key it had just
+received — "Add object" never enabled. Locally the strip won the race every time. The flag
+is gone; the step turning green is the feedback. Two phone-only failures were real too:
+the sticky publish bar wraps to three lines on a narrow screen and had outgrown the page's
+reserved padding, and a bottom-centre toast sat on top of the confirm chips. Padding and
+toast position fixed; the iPhone emulation moved to Pixel 5 because CI installs Chromium
+only.
+
 ### What changed because of it
 
 Every page uses the same tokens, fonts and components; the master sees what is left before

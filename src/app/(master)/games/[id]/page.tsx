@@ -13,9 +13,8 @@ import { CopyLink } from "./copy-link";
 import { masterErrorCopy } from "./error-copy";
 import { GenerationPanel } from "./generation-panel";
 import { ObjectRow } from "./object-row";
-import { isSavedWhat, redirectBack } from "./redirect-back";
+import { redirectBack } from "./redirect-back";
 import { PublishBar } from "./publish-bar";
-import { SavedToast } from "./saved-toast";
 import { deriveSteps, publishBlockers, type StepKey } from "./steps";
 import { StepCard } from "./step-card";
 import { UploadField } from "./upload-field";
@@ -29,9 +28,9 @@ export default async function EditGamePage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; ok?: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
-  const [{ id }, { error: errorCode, ok }] = await Promise.all([params, searchParams]);
+  const [{ id }, { error: errorCode }] = await Promise.all([params, searchParams]);
   const error = masterErrorCopy(errorCode);
   const user = await getCurrentUser();
   if (!user) redirect("/sign-in");
@@ -41,12 +40,11 @@ export default async function EditGamePage({
   const generation = deriveGenerationState(game.generationRuns, new Date());
   const steps = deriveSteps(game);
   const blockers = publishBlockers(game);
-  const savedOk = isSavedWhat(ok) ? ok : null;
   const step = (key: StepKey) => steps.find((s) => s.key === key) ?? steps[0];
 
   async function saveBackground(key: string) {
     "use server";
-    redirectBack(id, await updateGameAction(id, { backgroundKey: key }), "background");
+    redirectBack(id, await updateGameAction(id, { backgroundKey: key }));
   }
   async function addObject(formData: FormData) {
     "use server";
@@ -57,7 +55,6 @@ export default async function EditGamePage({
         prompt: String(formData.get("prompt") ?? ""),
         sourceImageKey: String(formData.get("sourceImageKey") ?? ""),
       }),
-      "object",
     );
   }
   async function saveWindow(formData: FormData) {
@@ -68,7 +65,6 @@ export default async function EditGamePage({
         startsAt: new Date(String(formData.get("startsAt"))),
         endsAt: new Date(String(formData.get("endsAt"))),
       }),
-      "window",
     );
   }
   async function publish() {
@@ -82,7 +78,6 @@ export default async function EditGamePage({
 
   return (
     <div className="flex flex-col gap-6 pb-44 sm:pb-24">
-      <SavedToast ok={savedOk} />
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="font-display text-3xl font-bold">{game.title}</h1>
