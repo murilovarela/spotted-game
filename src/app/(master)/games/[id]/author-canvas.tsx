@@ -4,7 +4,8 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { DEFAULT_RADIUS } from "@/components/canvas/geometry";
 import { MarkerCanvas, type CanvasMarker } from "@/components/canvas/marker-canvas";
-import { updateObjectAction } from "@/lib/games/actions";
+import { Button } from "@/components/ui/button";
+import { confirmObjectAction, updateObjectAction } from "@/lib/games/actions";
 import { cn } from "@/lib/utils";
 import { normalized, type GameImage, type Normalized, type ObjectForMaster } from "@/lib/types";
 
@@ -85,6 +86,15 @@ export function AuthorCanvas({ gameId, image, objects, editable }: { gameId: str
     });
   }
 
+  function confirm(objectId: string) {
+    start(async () => {
+      setError(null);
+      const r = await confirmObjectAction(gameId, objectId);
+      if (!r.ok) setError(r.message);
+      else toast.success("Position confirmed", { id: "confirm" });
+    });
+  }
+
   return (
     <div className="flex flex-col gap-3">
       <MarkerCanvas
@@ -109,23 +119,29 @@ export function AuthorCanvas({ gameId, image, objects, editable }: { gameId: str
           {objects.map((o) => {
             const placed = o.x !== null;
             return (
-              <button
-                key={o.id}
-                type="button"
-                data-testid="object-chip"
-                aria-pressed={selectedId === o.id}
-                onClick={() => setSelectedId(o.id)}
-                className={cn(
-                  "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors",
-                  "aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground",
-                  !placed && "border-dashed",
+              <div key={o.id} className="inline-flex items-center gap-1">
+                <button
+                  type="button"
+                  data-testid="object-chip"
+                  aria-pressed={selectedId === o.id}
+                  onClick={() => setSelectedId(o.id)}
+                  className={cn(
+                    "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors",
+                    "aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground",
+                    !placed && "border-dashed",
+                  )}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={o.sourceImageUrl} alt="" className="size-5 rounded-full object-cover" />
+                  {o.label}
+                  {!placed ? <MousePointerClick className="size-4" aria-label="select, then click the image to place" /> : o.confirmed ? <Check className="size-4" aria-label="confirmed" /> : <span className="text-xs opacity-80">(unconfirmed)</span>}
+                </button>
+                {placed && !o.confirmed && !sent.has(o.id) && (
+                  <Button type="button" size="sm" variant="secondary" disabled={pending} onClick={() => confirm(o.id)}>
+                    Confirm
+                  </Button>
                 )}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={o.sourceImageUrl} alt="" className="size-5 rounded-full object-cover" />
-                {o.label}
-                {!placed ? <MousePointerClick className="size-4" aria-label="select, then click the image to place" /> : o.confirmed ? <Check className="size-4" aria-label="confirmed" /> : <span className="text-xs opacity-80">(unconfirmed)</span>}
-              </button>
+              </div>
             );
           })}
         </div>

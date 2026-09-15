@@ -1,6 +1,6 @@
 "use client";
 import { ImagePlus, Loader2 } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { requestUploadUrl } from "@/lib/games/upload";
 import type { AssetKind } from "@/lib/storage";
 import { cn } from "@/lib/utils";
@@ -10,6 +10,10 @@ export function UploadField({ gameId, kind, onUploaded, label }: { gameId: strin
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const [over, setOver] = useState(false);
+  const [preview, setPreview] = useState<string | null>(null);
+  useEffect(() => () => {
+    if (preview) URL.revokeObjectURL(preview);
+  }, [preview]);
   function upload(file: File) {
     start(async () => {
       setError(null);
@@ -19,6 +23,13 @@ export function UploadField({ gameId, kind, onUploaded, label }: { gameId: strin
       if (!put.ok) return setError(`Upload failed (${put.status})`);
       await onUploaded(r.data.key);
     });
+  }
+  function choose(file: File) {
+    setPreview((old) => {
+      if (old) URL.revokeObjectURL(old);
+      return URL.createObjectURL(file);
+    });
+    upload(file);
   }
   return (
     <div className="flex flex-col gap-2">
@@ -37,12 +48,16 @@ export function UploadField({ gameId, kind, onUploaded, label }: { gameId: strin
           e.preventDefault();
           setOver(false);
           const file = e.dataTransfer.files[0];
-          if (file) upload(file);
+          if (file) choose(file);
         }}
       >
+        {preview && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={preview} alt="" className="max-h-40 rounded-lg object-contain" />
+        )}
         {pending ? <Loader2 className="size-6 animate-spin" aria-hidden /> : <ImagePlus className="size-6" aria-hidden />}
         <span className="font-medium text-foreground">{label}</span>
-        <span>Drop an image here or click to choose · PNG, JPEG, WebP</span>
+        <span>{preview ? "Drop another image to replace it" : "Drop an image here or click to choose · PNG, JPEG, WebP"}</span>
         <input
           type="file"
           accept="image/png,image/jpeg,image/webp"
@@ -50,7 +65,7 @@ export function UploadField({ gameId, kind, onUploaded, label }: { gameId: strin
           className="sr-only"
           onChange={(e) => {
             const file = e.target.files?.[0];
-            if (file) upload(file);
+            if (file) choose(file);
           }}
         />
       </label>
