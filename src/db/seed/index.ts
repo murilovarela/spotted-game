@@ -3,10 +3,10 @@
  * set owned by an opponent so the master account has something to play.
  *
  * Drives the Phase 1 core with a shifted `now` so every row goes through the same
- * validation and locks as the app. Idempotent: deletes games titled "[seed] …" first,
- * along with any "[e2e] …" games left behind by generate.spec.ts (it has no delete path
- * in the UI for a published game), so the shared dev DB doesn't accumulate e2e artefacts
- * and the e2e user doesn't run into the daily generation cap.
+ * validation and locks as the app. Idempotent: deletes all games titled "[seed] …" or
+ * "[e2e] …" (for ANY master, not scoped by ID) first, so the shared dev database doesn't
+ * accumulate e2e artefacts from generate.spec.ts (which has no delete path in the UI for
+ * a published game) and CI seeding a fresh branch cleans up older runs.
  * Uses DATABASE_URL (not TEST_DATABASE_URL) on purpose — this seeds whatever branch
  * the app points at; CI points DATABASE_URL at the test branch for E2E.
  */
@@ -111,6 +111,7 @@ async function main(): Promise<void> {
   const opponent = await ensureUser(db, "seed-opponent", "Seed Opponent");
   const players = await Promise.all([1, 2, 3].map((n) => ensureUser(db, `seed-player-${n}`, `Player ${n}`)));
 
+  // Delete all "[seed] …" and "[e2e] …" games for any master, not scoped by ID; shared dev DB cleanup.
   const deleted = await db
     .delete(games)
     .where(or(like(games.title, `${PREFIX}%`), like(games.title, `${E2E_PREFIX}%`)))
