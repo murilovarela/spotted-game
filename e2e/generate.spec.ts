@@ -27,7 +27,7 @@ test("upload → generate → confirm → publish", async ({ page }) => {
     await expect(add).toBeDisabled();
     await page.getByLabel(/^label/i).fill(label);
     await page.getByLabel("Object image").setInputFiles(`${FIX}/object-${i + 1}.png`);
-    await expect(add).toBeEnabled();
+    await expect(add).toBeEnabled({ timeout: 30_000 }); // a presigned PUT to object storage; slow from CI
     await add.click();
     await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
   }

@@ -925,6 +925,103 @@ the flows are bare, and shadcn/ui is the chosen way to fix that.
 
 ---
 
+## Phase 5 — The UI: shadcn/ui, step cards, an image-first play page
+
+Branch `phase-5/ui`, twenty commits. Spec `docs/specs/2026-09-14-phase-5-ui-design.md`,
+plan `docs/plans/2026-09-14-phase-5-ui.md`, handoff `docs/handoffs/phase-5.md`.
+
+### What we set out to do
+
+The owner's verdict after Phase 4: "The UI looks terrible and the ux is terrible too." Every
+page had shipped as bare Tailwind markup around working logic. The brief was a full pass on
+shadcn/ui: playful, phone-first for players, desktop-first for masters, and two flows
+redesigned rather than restyled — the master edit page, which was a long scroll with no
+sense of what was left to do, and the play page, which was an image with a list next to it.
+
+### What we decided and why
+
+Everything the previous phases had frozen stayed frozen. The schema, the types, visibility,
+scoring, the actions, the generation pipeline, storage, and the canvas geometry did not
+change; the one `src/lib` edit added a cover URL to the games list. The SVG overlay in
+`marker-canvas.tsx` gained two transparent circles for fingers (`useCoarsePointer`) and a
+smaller dot, nothing else. The alternative — letting the redesign reach into the actions to
+"simplify" them — would have reopened four phases of review for cosmetic gain.
+
+The edit page became six numbered cards in the order a master actually works, each with a
+done/todo mark derived on the server from the row (`steps.ts`, pure, unit-tested), and a
+sticky bar whose Publish button is disabled with the reasons listed next to it
+(`publishBlockers`). The transaction still decides — invariant 4 did not move — the bar
+just says in advance what it will say. Midway through, the owner asked for three more
+things: confirm on the object chip inside "Confirm positions" instead of on the row, the
+prompt instead of coordinates in the row, and a preview of the chosen image before "Add
+object". Those became a Task 4b.
+
+The play page put the image first: a compact top bar with the timer and `n / N markers`,
+the object rail as a horizontal strip on phones with a bottom sheet for a closer look, a
+sticky footer with the trash zone and Submit, and a real Dialog for the one-shot
+confirmation — the focus trap the Phase 3 handoff had listed as a gap came free.
+
+### What broke
+
+The plan's play-page wrapper clipped a 4:3 image at 1280×720: `max-h` plus
+`overflow-hidden` on a full-width column cut 160 px off the bottom, and `play.spec`'s
+click at (0.1, 0.9) landed in the clipped region. The implementer replaced it with a wrapper
+sized from the image's own aspect ratio, and the reviewer checked by arithmetic that the
+`<img>` and `<svg>` boxes still coincide — the one thing that must never drift.
+
+The owner found two things in the browser that no test had. The leaderboard's own-row
+highlight (`bg-yellow-50`) was unreadable in dark mode; it became a `bg-primary/10` tint
+that the reviewer checked against both token sets. And two card titles rendered at width
+zero: shadcn's `CardHeader` carries `contain: inline-size`, so any `Card` with
+`items-center` shrink-wraps its header to nothing. Both cards lost `items-center`; the
+handoff now says never to add it back.
+
+A day of e2e runs against the shared development database produced two failures that
+looked like regressions and were not. `generate.spec` stuck at `idle` because the e2e user
+had exactly twenty generation attempts in twenty-four hours — Phase 4's cap, working. And
+Playwright's global setup started timing out on `/games`: each earlier run had left an
+"[e2e] generated game" behind, so the new card grid was loading twelve full-size generated
+PNGs from Neon storage before the `load` event. The fix was three-fold: lazy covers, a
+`domcontentloaded` wait in setup, and a seed that also deletes `[e2e] …` games.
+
+Two process slips. Implementers twice ended their turn while their own e2e run sat in the
+background and had to be resumed; later dispatches said "foreground, 600 s timeout". And a
+report attributed an unplanned title-centring commit to a user screenshot the controller
+had never passed on; the re-review found the agent had in fact received an image message
+of unknown provenance, so the report now quotes it verbatim and calls the change what it
+is — a consistency fix.
+
+The final whole-branch review died on Opus's weekly limit and re-ran on Sonnet.
+
+CI then failed where local runs had passed, and the trace told a story nobody had seen
+locally. Save-success redirects carried a `?ok=<what>` flag so a client component could
+fire a toast and strip it again; Next keys the page segment on its search params, so each
+of those two navigations remounted every client component on the page. In CI the object
+image's upload finished in that window and `AddObjectForm` forgot the key it had just
+received — "Add object" never enabled. Locally the strip won the race every time. The flag
+is gone; the step turning green is the feedback. Two phone-only failures were real too:
+the sticky publish bar wraps to three lines on a narrow screen and had outgrown the page's
+reserved padding, and a bottom-centre toast sat on top of the confirm chips. Padding and
+toast position fixed; the iPhone emulation moved to Pixel 5 because CI installs Chromium
+only.
+
+### What changed because of it
+
+Every page uses the same tokens, fonts and components; the master sees what is left before
+pressing Publish; a phone can play. `e2e/ui.spec.ts` pins the dialog's focus trap and
+Escape, the phone layout (no horizontal scroll, Submit and timer in view on an iPhone 13
+project), and the publish gate. 227 unit tests, e2e 13 passed / 1 skipped on both
+projects, build green.
+
+### Where this leaves us
+
+The product finally looks like one. The next real work is under the surface: a thumbnail
+derivative at generation time so the list page stops loading full frames, a production
+Neon branch separate from development, and the touch-authoring hit-area edge case the
+reviewer flagged.
+
+---
+
 ## Autonomous loop evidence
 
 ### Loop 1 — Generation retry (product)
@@ -1016,3 +1113,4 @@ Mirrors the table in SYSTEM.md §7. Each row started as a correction given twice
 | 2026-09-13 | Reviewers see one task; some defects span tasks | Whole-branch review before merge (dedupe, key ownership, name leak) |
 | 2026-09-13 | File-write hooks are bypassed by shell writes | *Open.* Guard should also match `Bash` and inspect the command for protected paths |
 | 2026-09-14 | Runbook claims must be checked against the environment before being written | *Open.* The integration-reviewer brief now asks for a docs-vs-deployment pass; no automated check |
+| 2026-09-14 | Subagents must not background their own test runs | Dispatch text: "run e2e in the foreground with a 600 s timeout" — not yet in the implementer template |

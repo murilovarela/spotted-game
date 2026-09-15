@@ -6,6 +6,9 @@ players then find them against the clock and appear on a leaderboard. Full produ
 specification: [`docs/SPEC.md`](./docs/SPEC.md). Engineering system that built it:
 [`docs/SYSTEM.md`](./docs/SYSTEM.md).
 
+**Demo:** [`docs/demo.mp4`](./docs/demo.mp4) — a master builds a game from a photo and
+three objects, publishes it, and a player hunts them down against the clock.
+
 ## Stack
 
 | Layer | Choice | Rationale |
@@ -49,6 +52,23 @@ npm run db:migrate
 npm run seed                 # demo games in all four lifecycle states
 npm run dev
 ```
+
+### Try it with the example images
+
+`docs/example-images/` holds a ready-made set so you can exercise the whole flow without
+hunting for pictures:
+
+| File | Use as |
+| --- | --- |
+| `busy-city.webp` | Background — a portrait street scene with plenty of places to hide things |
+| `bob.jpg`, `kiki.jpg`, `panqueca.jpg` | Objects — one upload each |
+
+Sign in, **New game**, upload `busy-city.webp` as the background, add the three objects
+(a label and, optionally, a prompt such as "sitting on a windowsill, small"), press
+**Generate**, drag and confirm each circle in *Confirm positions*, set a play window, and
+**Publish**. Open the `/g/…` link from a second Google account to play. With
+`GENERATION_MODE=paste` the objects are pasted in deterministically; with `gemini` the
+model hides them.
 
 ## Commands
 

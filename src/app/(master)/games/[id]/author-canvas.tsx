@@ -1,8 +1,12 @@
 "use client";
+import { Check, MousePointerClick } from "lucide-react";
 import { useState, useTransition } from "react";
+import { toast } from "sonner";
 import { DEFAULT_RADIUS } from "@/components/canvas/geometry";
 import { MarkerCanvas, type CanvasMarker } from "@/components/canvas/marker-canvas";
-import { updateObjectAction } from "@/lib/games/actions";
+import { Button } from "@/components/ui/button";
+import { confirmObjectAction, updateObjectAction } from "@/lib/games/actions";
+import { cn } from "@/lib/utils";
 import { normalized, type GameImage, type Normalized, type ObjectForMaster } from "@/lib/types";
 
 type Position = { readonly x: Normalized; readonly y: Normalized; readonly radius: Normalized };
@@ -76,7 +80,18 @@ export function AuthorCanvas({ gameId, image, objects, editable }: { gameId: str
           next.delete(objectId);
           return next;
         });
+      } else {
+        toast.success("Position saved", { id: "position" });
       }
+    });
+  }
+
+  function confirm(objectId: string) {
+    start(async () => {
+      setError(null);
+      const r = await confirmObjectAction(gameId, objectId);
+      if (!r.ok) setError(r.message);
+      else toast.success("Position confirmed", { id: "confirm" });
     });
   }
 
@@ -101,23 +116,38 @@ export function AuthorCanvas({ gameId, image, objects, editable }: { gameId: str
       />
       {editable && (
         <div className="flex flex-wrap gap-2">
-          {objects.map((o) => (
-            <button
-              key={o.id}
-              type="button"
-              data-testid="object-chip"
-              aria-pressed={selectedId === o.id}
-              onClick={() => setSelectedId(o.id)}
-              className="rounded border px-2 py-1 text-sm aria-pressed:bg-black aria-pressed:text-white"
-            >
-              {o.label}
-              {o.x === null ? " — select, then click the image to place" : o.confirmed ? " ✓" : " (unconfirmed)"}
-            </button>
-          ))}
+          {objects.map((o) => {
+            const placed = o.x !== null;
+            return (
+              <div key={o.id} className="inline-flex scroll-mt-20 scroll-mb-48 items-center gap-1">
+                <button
+                  type="button"
+                  data-testid="object-chip"
+                  aria-pressed={selectedId === o.id}
+                  onClick={() => setSelectedId(o.id)}
+                  className={cn(
+                    "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors",
+                    "aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground",
+                    !placed && "border-dashed",
+                  )}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={o.sourceImageUrl} alt="" className="size-5 rounded-full object-cover" />
+                  {o.label}
+                  {!placed ? <MousePointerClick className="size-4" aria-label="select, then click the image to place" /> : o.confirmed ? <Check className="size-4" aria-label="confirmed" /> : <span className="text-xs opacity-80">(unconfirmed)</span>}
+                </button>
+                {placed && !o.confirmed && !sent.has(o.id) && (
+                  <Button type="button" size="sm" variant="secondary" disabled={pending} onClick={() => confirm(o.id)}>
+                    Confirm
+                  </Button>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
-      <p className="text-xs text-neutral-500">Drag a circle to move it, drag its handle to resize. Any change needs a fresh Confirm.</p>
-      {pending && <p className="text-xs text-neutral-500">Saving…</p>}
+      <p className="text-xs text-muted-foreground">Drag a circle to move it, drag its handle to resize. Any change needs a fresh Confirm.</p>
+      {pending && <p className="text-xs text-muted-foreground">Saving…</p>}
       {error && (
         <p role="alert" className="text-sm text-red-700">
           {error}

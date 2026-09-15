@@ -46,10 +46,10 @@ describe("loadGameForViewer", () => {
 
 describe("listGamesForMaster", () => {
   it("lists only the caller's games with derived status", async () => {
-    const list = await listGamesForMaster(db, "u_master", ms(endsAt, 1));
+    const list = await listGamesForMaster(db, "u_master", ms(endsAt, 1), identityResolver);
     expect(list).toHaveLength(1);
-    expect(list[0]).toMatchObject({ id: gameId, status: "finished" });
-    expect(await listGamesForMaster(db, "u_player", startsAt)).toEqual([]);
+    expect(list[0]).toMatchObject({ id: gameId, status: "finished", imageUrl: "url:gen/k.png" });
+    expect(await listGamesForMaster(db, "u_player", startsAt, identityResolver)).toEqual([]);
   });
 });
 

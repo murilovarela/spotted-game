@@ -8,6 +8,7 @@
 import { useRef, useState, type KeyboardEvent, type PointerEvent, type RefObject } from "react";
 import type { GameImage, Normalized, NormalizedPoint } from "@/lib/types";
 import { clamp01, nudge, radiusFromHandle, radiusPx, toNormalized, toPixel, type Rect } from "./geometry";
+import { useCoarsePointer } from "./use-coarse-pointer";
 
 type CanvasMode = "play" | "author" | "reveal";
 
@@ -66,8 +67,10 @@ export function MarkerCanvas(props: MarkerCanvasProps) {
   const [drag, setDrag] = useState<Drag | null>(null);
   const [overTrash, setOverTrash] = useState(false);
   const [nudging, setNudging] = useState<Nudging | null>(null);
+  const coarse = useCoarsePointer();
+  const hit = coarse ? 2.4 : 1;
   const readOnly = mode === "reveal";
-  const dotR = image.width * 0.015;
+  const dotR = image.width * 0.008;
   const stroke = Math.max(2, image.width * 0.003);
   const rect = (): Rect => svgRef.current?.getBoundingClientRect() ?? NO_RECT;
   const find = (id: string) => markers.find((m) => m.id === id);
@@ -217,6 +220,7 @@ export function MarkerCanvas(props: MarkerCanvasProps) {
                   strokeDasharray={unconfirmed ? `${stroke * 3} ${stroke * 2}` : undefined}
                 />
               )}
+              <circle cx={c.x} cy={c.y} r={dotR * hit} fill="transparent" />
               {m.label && (
                 <text
                   x={c.x}
@@ -232,6 +236,9 @@ export function MarkerCanvas(props: MarkerCanvasProps) {
                 </text>
               )}
               <circle cx={c.x} cy={c.y} r={dotR} fill={mode === "play" ? "rgba(239,68,68,0.9)" : "rgba(255,255,255,0.95)"} stroke="#111" strokeWidth={stroke} />
+              {mode === "author" && radius !== null && (
+                <circle cx={c.x + rPx} cy={c.y} r={dotR * 0.8 * hit} fill="transparent" style={{ cursor: "ew-resize" }} onPointerDown={(e) => startDrag(e, m.id, "handle")} />
+              )}
               {mode === "author" && radius !== null && (
                 <circle
                   data-testid="radius-handle"

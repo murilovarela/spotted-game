@@ -259,12 +259,15 @@ attempt 1.
 
 ### 6.2 Development loop — Stop hook recovery
 
-[AI-DEV-LOG.md](./AI-DEV-LOG.md) "Autonomous loop evidence → Loop 2" — a transcript excerpt
-showing the agent finishing an
-implementation, the `Stop` hook blocking on two failing scoring tests, the agent reading
-the failure, identifying that a marker was double-counted against one object, fixing the
-consumed-object set, and re-running to green. One human prompt at the start; none in the
-middle.
+[AI-DEV-LOG.md](./AI-DEV-LOG.md) "Autonomous loop evidence → Loop 2" — the hook's block
+output and what followed. Phase 1, Task 9: the orchestrating session told a subagent to fix a
+hydration bug in `src/app/(master)/games/[id]/window-fields.tsx` by setting state inside a
+`useEffect`. The subagent applied it; the orchestrator tried to end its turn; the `Stop`
+hook ran `npm run verify` and blocked on `react-hooks/set-state-in-effect`. The orchestrator
+read the failure, recognised its own instruction as the cause, sent the subagent a
+replacement pattern (`useSyncExternalStore` plus a keyed remount — no effect, no
+`setState`), waited for the commit, and re-ran lint to green. Commit `41baa3d`. One human
+prompt at the start; none between the block and the green run.
 
 ---
 

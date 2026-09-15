@@ -1,11 +1,22 @@
 "use client";
+import { CheckCircle2, Clock, Loader2, Sparkles, XCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { startGenerationAction } from "@/lib/generation/actions";
 import type { GenerationState } from "@/lib/generation/status";
 import type { GenerationRunView } from "@/lib/types";
 
 const POLL_MS = 3000;
+
+const STATUS_ICON: Record<GenerationRunView["status"], React.ReactNode> = {
+  queued: <Clock className="size-4 text-muted-foreground" aria-hidden />,
+  running: <Loader2 className="size-4 animate-spin text-primary" aria-hidden />,
+  passed: <CheckCircle2 className="size-4 text-success" aria-hidden />,
+  failed: <XCircle className="size-4 text-destructive" aria-hidden />,
+};
 
 /** What the master can do about a failure: prompts fix model failures, not config or runtime ones. */
 function nextStep(reason: string): string {
@@ -48,50 +59,52 @@ export function GenerationPanel({
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          data-testid="generate"
-          onClick={generate}
-          disabled={!canGenerate || running || pending}
-          className="rounded bg-black px-3 py-2 text-white disabled:opacity-40"
-        >
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <Button data-testid="generate" onClick={generate} disabled={!canGenerate || running || pending} size="lg">
+          {running || pending ? <Loader2 className="animate-spin" aria-hidden /> : <Sparkles aria-hidden />}
           {runs.length === 0 ? "Generate" : "Generate again"}
-        </button>
-        <span data-testid="generation-state" className="text-sm text-neutral-600">
+        </Button>
+        <span data-testid="generation-state" className="text-sm text-muted-foreground">
           {state.kind}
           {state.kind === "running" && ` — attempt ${state.attemptNumber}…`}
           {state.kind === "failed" && ` after ${state.attempts} attempt${state.attempts === 1 ? "" : "s"}`}
         </span>
+        {!canGenerate && !running && <span className="text-sm text-muted-foreground">Needs a background and at least one object.</span>}
       </div>
       {state.kind === "failed" && (
-        <p role="alert" className="rounded bg-amber-50 p-2 text-sm text-amber-900">
-          {state.reason}
-          <br />
-          {nextStep(state.reason)}
-        </p>
+        <Alert role="alert">
+          <AlertTitle>Generation did not pass</AlertTitle>
+          <AlertDescription>
+            <p>{state.reason}</p>
+            <p>{nextStep(state.reason)}</p>
+          </AlertDescription>
+        </Alert>
       )}
       {error && (
-        <p role="alert" className="text-sm text-red-700">
-          {error}
-        </p>
+        <Alert variant="destructive" role="alert">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
       {runs.length > 0 && (
-        <ol className="divide-y text-sm">
-          {[...runs]
-            .sort((a, b) => b.attemptNumber - a.attemptNumber)
-            .map((r) => (
-              <li key={r.attemptNumber} data-testid="generation-run" data-status={r.status} className="flex flex-col gap-1 py-2">
-                <div className="flex gap-3">
-                  <span className="font-medium">#{r.attemptNumber}</span>
-                  <span>{r.status}</span>
-                  <span className="text-neutral-500">{r.startedAt.toISOString().slice(11, 19)} UTC</span>
-                </div>
-                {r.failureReason && <pre className="whitespace-pre-wrap text-xs text-neutral-700">{r.failureReason}</pre>}
-                {r.adjustment && <pre className="whitespace-pre-wrap text-xs text-neutral-500">→ {r.adjustment}</pre>}
-              </li>
-            ))}
+        <ol className="relative flex flex-col gap-3 border-l pl-5 text-sm">
+          {[...runs].sort((a, b) => b.attemptNumber - a.attemptNumber).map((r) => (
+            <li key={r.attemptNumber} data-testid="generation-run" data-status={r.status} className="relative flex flex-col gap-1">
+              <span className="absolute -left-[1.6rem] top-0.5 grid size-5 place-items-center rounded-full bg-background">{STATUS_ICON[r.status]}</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium">Attempt {r.attemptNumber}</span>
+                <Badge variant="secondary">{r.status}</Badge>
+                <span className="text-muted-foreground">{r.startedAt.toISOString().slice(11, 19)} UTC{r.finishedAt && ` · ${Math.round((r.finishedAt.getTime() - r.startedAt.getTime()) / 1000)} s`}</span>
+              </div>
+              {r.failureReason && <pre className="whitespace-pre-wrap font-sans text-xs text-foreground/80">{r.failureReason}</pre>}
+              {r.adjustment && (
+                <details className="text-xs text-muted-foreground">
+                  <summary className="cursor-pointer">Prompt adjustment</summary>
+                  <pre className="mt-1 whitespace-pre-wrap font-sans">{r.adjustment}</pre>
+                </details>
+              )}
+            </li>
+          ))}
         </ol>
       )}
     </div>

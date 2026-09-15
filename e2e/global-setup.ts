@@ -6,8 +6,7 @@
 import { createClerkClient } from "@clerk/backend";
 import { clerk, clerkSetup, setupClerkTestingToken } from "@clerk/testing/playwright";
 import { chromium, type FullConfig } from "@playwright/test";
-import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { reseed } from "./reseed";
 
 const EMAIL = "e2e@spotted.test";
 
@@ -37,14 +36,7 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
   await clerkSetup();
   const user = await resolveUser();
 
-  const out = execFileSync("npm", ["run", "-s", "seed", "--", "--json"], {
-    env: { ...process.env, SEED_MASTER_ID: user.id },
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "inherit"],
-  });
-  const lastLine = out.trim().split("\n").at(-1) ?? "";
-  mkdirSync("e2e/.auth", { recursive: true });
-  writeFileSync("e2e/.auth/seed.json", JSON.stringify({ ...JSON.parse(lastLine), user }));
+  reseed(user.id, user.email);
 
   const baseURL = config.projects[0]?.use.baseURL ?? "http://localhost:3000";
   const browser = await chromium.launch();
@@ -52,7 +44,10 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
   await setupClerkTestingToken({ page });
   await page.goto("/");
   await clerk.signIn({ page, emailAddress: user.email });
-  await page.goto("/games"); // a protected route: proves the session is live
+  // waitUntil: "domcontentloaded" — this only has to prove the session is live, not render the
+  // page; /games renders one full-size generated image per card, and waiting for "load" there
+  // can exceed the navigation timeout well before the DOM (and thus the session) is confirmed.
+  await page.goto("/games", { waitUntil: "domcontentloaded" });
   await page.waitForURL("**/games");
   await page.context().storageState({ path: "e2e/.auth/user.json" });
   await browser.close();

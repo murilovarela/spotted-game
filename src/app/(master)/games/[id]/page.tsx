@@ -5,12 +5,18 @@ import { addObjectAction, publishGameAction, setWindowAction, unpublishGameActio
 import { loadGameForMasterById } from "@/lib/games/queries";
 import { deriveGenerationState } from "@/lib/generation/status";
 import { MAX_OBJECTS_PER_GAME } from "@/lib/types";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { SubmitButton } from "@/components/shell/submit-button";
 import { AddObjectForm } from "./add-object-form";
 import { AuthorCanvas } from "./author-canvas";
+import { CopyLink } from "./copy-link";
 import { masterErrorCopy } from "./error-copy";
 import { GenerationPanel } from "./generation-panel";
 import { ObjectRow } from "./object-row";
 import { redirectBack } from "./redirect-back";
+import { PublishBar } from "./publish-bar";
+import { deriveSteps, publishBlockers, type StepKey } from "./steps";
+import { StepCard } from "./step-card";
 import { UploadField } from "./upload-field";
 import { WindowFields } from "./window-fields";
 
@@ -32,6 +38,9 @@ export default async function EditGamePage({
   if (!game) notFound();
   const editable = game.status === "draft";
   const generation = deriveGenerationState(game.generationRuns, new Date());
+  const steps = deriveSteps(game);
+  const blockers = publishBlockers(game);
+  const step = (key: StepKey) => steps.find((s) => s.key === key) ?? steps[0];
 
   async function saveBackground(key: string) {
     "use server";
@@ -68,49 +77,38 @@ export default async function EditGamePage({
   }
 
   return (
-    <div className="flex flex-col gap-8">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">{game.title}</h1>
-        <span className="rounded bg-neutral-100 px-2 py-1 text-xs uppercase">{game.status}</span>
+    <div className="flex flex-col gap-6 pb-44 sm:pb-24">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="font-display text-3xl font-bold">{game.title}</h1>
+          {game.generalPrompt && <p className="text-sm text-muted-foreground">{game.generalPrompt}</p>}
+        </div>
+        {game.status !== "draft" && (
+          <div className="flex items-center gap-2">
+            <a href={`/g/${game.publicId}`} className="text-sm underline underline-offset-4">
+              /g/{game.publicId}
+            </a>
+            <CopyLink path={`/g/${game.publicId}`} />
+          </div>
+        )}
       </header>
       {error && (
-        <p role="alert" className="rounded bg-red-50 p-2 text-red-700">
-          {error}
-        </p>
+        <Alert variant="destructive" role="alert">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
-      <section>
-        <h2 className="mb-2 font-medium">Background</h2>
+      <StepCard n={1} step={step("background")} locked={!editable}>
         {game.backgroundUrl ? (
-          // Reserve the height up front so the page does not reflow when the (unsized) preview lands.
           <div className="h-64">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={game.backgroundUrl} alt="" className="h-full w-auto rounded object-contain" />
+            <img src={game.backgroundUrl} alt="" className="h-full w-auto rounded-lg object-contain" />
           </div>
-        ) : (
-          <p className="text-neutral-500">None yet.</p>
-        )}
-        {editable && <UploadField gameId={id} kind="background" label="Upload background" onUploaded={saveBackground} />}
-      </section>
+        ) : null}
+        {editable && <UploadField gameId={id} kind="background" label={game.backgroundUrl ? "Replace background" : "Upload background"} onUploaded={saveBackground} />}
+      </StepCard>
 
-      {editable && (
-        <section>
-          <h2 className="mb-2 font-medium">Generation</h2>
-          <GenerationPanel gameId={id} state={generation} runs={game.generationRuns} canGenerate={game.backgroundUrl !== null && game.objects.length > 0} />
-        </section>
-      )}
-
-      {game.image && (
-        <section>
-          <h2 className="mb-2 font-medium">Positions</h2>
-          <AuthorCanvas gameId={id} image={game.image} objects={game.objects} editable={editable} />
-        </section>
-      )}
-
-      <section>
-        <h2 className="mb-2 font-medium">
-          Objects ({game.objects.length}/{MAX_OBJECTS_PER_GAME})
-        </h2>
+      <StepCard n={2} step={step("objects")} locked={!editable}>
         <ul className="divide-y">
           {game.objects.map((o) => (
             <ObjectRow key={o.id} gameId={id} object={o} editable={editable} />
@@ -118,34 +116,32 @@ export default async function EditGamePage({
         </ul>
         {/* Keyed on the count so the form remounts — and drops the previous upload key — after each add. */}
         {editable && game.objects.length < MAX_OBJECTS_PER_GAME && <AddObjectForm key={game.objects.length} gameId={id} action={addObject} />}
-      </section>
+      </StepCard>
 
-      <section>
-        <h2 className="mb-2 font-medium">Window</h2>
-        <form action={saveWindow} className="flex flex-col gap-3">
-          <WindowFields
-            startsAt={game.startsAt?.toISOString() ?? null}
-            endsAt={game.endsAt?.toISOString() ?? null}
-            disabled={!editable}
-          />
-          {editable && <button className="self-start rounded border px-3 py-2">Save window</button>}
+      {editable && (
+        <StepCard n={3} step={step("generate")} locked={false}>
+          <GenerationPanel gameId={id} state={generation} runs={game.generationRuns} canGenerate={game.backgroundUrl !== null && game.objects.length > 0} />
+        </StepCard>
+      )}
+
+      {game.image && (
+        <StepCard n={4} step={step("positions")} locked={!editable}>
+          <AuthorCanvas gameId={id} image={game.image} objects={game.objects} editable={editable} />
+        </StepCard>
+      )}
+
+      <StepCard n={5} step={step("window")} locked={!editable}>
+        <form action={saveWindow} className="flex flex-col gap-4">
+          <WindowFields startsAt={game.startsAt?.toISOString() ?? null} endsAt={game.endsAt?.toISOString() ?? null} disabled={!editable} />
+          {editable && (
+            <SubmitButton variant="secondary" className="self-start" pendingLabel="Saving…">
+              Save window
+            </SubmitButton>
+          )}
         </form>
-      </section>
+      </StepCard>
 
-      <section className="flex gap-3">
-        {editable ? (
-          <form action={publish}>
-            <button className="rounded bg-black px-3 py-2 text-white">Publish</button>
-          </form>
-        ) : game.status === "scheduled" ? (
-          <form action={unpublish}>
-            <button className="rounded border px-3 py-2">Unpublish</button>
-          </form>
-        ) : null}
-        <a href={`/g/${game.publicId}`} className="self-center text-sm underline">
-          /g/{game.publicId}
-        </a>
-      </section>
+      <PublishBar status={game.status} blockers={blockers} publish={publish} unpublish={unpublish} />
     </div>
   );
 }

@@ -1,5 +1,7 @@
 "use client";
 import { useState, useSyncExternalStore } from "react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { fromLocalInputValue, toLocalInputValue } from "./window-time";
 
 const noop = () => () => {};
@@ -44,28 +46,29 @@ function Inner({
   const iso = (v: string) => (v ? fromLocalInputValue(v) : "");
   return (
     <div className="flex flex-wrap gap-4">
-      <label className="flex flex-col gap-1">
-        Starts
-        <input
+      <div className="grid gap-2">
+        <Label htmlFor="startsAt-local">Starts</Label>
+        <Input
+          id="startsAt-local"
           type="datetime-local"
           value={start}
           onChange={(e) => setStart(e.target.value)}
           disabled={disabled}
-          className="rounded border p-2"
           required
         />
-      </label>
-      <label className="flex flex-col gap-1">
-        Ends
-        <input
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor="endsAt-local">Ends</Label>
+        <Input
+          id="endsAt-local"
           type="datetime-local"
           value={end}
           onChange={(e) => setEnd(e.target.value)}
           disabled={disabled}
-          className="rounded border p-2"
           required
         />
-      </label>
+      </div>
+      <p className="basis-full text-xs text-muted-foreground">Times are in your local zone; players everywhere see the same instant.</p>
       <input type="hidden" name="startsAt" value={iso(start)} />
       <input type="hidden" name="endsAt" value={iso(end)} />
     </div>

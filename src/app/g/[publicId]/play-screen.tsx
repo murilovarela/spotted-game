@@ -1,6 +1,10 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useReducer, useRef, useState, useTransition } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { MarkerCanvas } from "@/components/canvas/marker-canvas";
 import { canSubmit, EMPTY_MARKERS, markerReducer, type MarkerAction, type MarkerState } from "@/components/canvas/marker-state";
 import { ObjectRail } from "@/components/canvas/object-rail";
@@ -8,6 +12,7 @@ import { Timer } from "@/components/canvas/timer";
 import { TrashZone } from "@/components/canvas/trash-zone";
 import { submitAttemptAction } from "@/lib/games/actions";
 import type { GameImage, ObjectThumbnail } from "@/lib/types";
+import { PlayerBar } from "./player-bar";
 
 export function PlayScreen({
   publicId,
@@ -48,58 +53,73 @@ export function PlayScreen({
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-col gap-4 p-4">
-      <header className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">{title}</h1>
-        <Timer startedAtMs={startedAtMs} serverNowMs={serverNowMs} />
-      </header>
-      <div className="grid gap-4 md:grid-cols-[1fr_8rem]">
-        <MarkerCanvas
-          image={image}
-          mode="play"
-          markers={state.markers}
-          selectedId={state.selected}
-          canAdd={state.markers.length < total}
-          trashRef={trashRef}
-          onAdd={(point) => dispatch({ type: "add", id: `m${nextId.current++}`, point })}
-          onMove={(id, point) => dispatch({ type: "move", id, point })}
-          onRemove={(id) => dispatch({ type: "remove", id })}
-          onSelect={(id) => dispatch({ type: "select", id })}
-        />
-        <aside className="flex flex-col gap-3">
-          <ObjectRail objects={objects} />
-        </aside>
-      </div>
-      <TrashZone ref={trashRef} active={state.selected !== null} />
-      <footer className="flex items-center justify-between">
-        <span data-testid="marker-count" className="text-sm text-neutral-600">
+    <div className="flex min-h-dvh flex-col">
+      <PlayerBar>
+        <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{title}</span>
+        <Badge data-testid="marker-count" variant="secondary" className="shrink-0 tabular-nums">
           {state.markers.length} / {total} markers
+        </Badge>
+        <span className="shrink-0">
+          <Timer startedAtMs={startedAtMs} serverNowMs={serverNowMs} />
         </span>
-        <button data-testid="submit" disabled={!ready || pending} onClick={() => setConfirming(true)} className="rounded bg-black px-4 py-2 text-white disabled:opacity-40">
-          Submit
-        </button>
-      </footer>
+      </PlayerBar>
+      <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-3 pb-20 lg:grid lg:grid-cols-[1fr_9rem] lg:gap-4 lg:px-4 lg:py-4">
+        {/* Letterboxed at lg: sized from the image's own ratio so the whole image — and every
+            marker on it — stays visible and clickable within the height budget, instead of
+            being cropped by a fixed-height, full-width box (a portrait or squarish background,
+            like the seeded 4:3 fixture, would otherwise have its bottom cut off and unclickable). */}
+        <div
+          className="lg:mx-auto lg:w-auto lg:max-w-full lg:max-h-[calc(100dvh-10rem)] lg:justify-self-center lg:overflow-hidden lg:rounded-xl"
+          style={{ aspectRatio: `${image.width} / ${image.height}` }}
+        >
+          <MarkerCanvas
+            image={image}
+            mode="play"
+            markers={state.markers}
+            selectedId={state.selected}
+            canAdd={state.markers.length < total}
+            trashRef={trashRef}
+            onAdd={(point) => dispatch({ type: "add", id: `m${nextId.current++}`, point })}
+            onMove={(id, point) => dispatch({ type: "move", id, point })}
+            onRemove={(id) => dispatch({ type: "remove", id })}
+            onSelect={(id) => dispatch({ type: "select", id })}
+          />
+        </div>
+        <aside className="lg:flex lg:flex-col lg:gap-3">
+          <ObjectRail objects={objects} variant="strip" />
+        </aside>
+      </main>
       {error && (
-        <p role="alert" className="rounded bg-red-50 p-2 text-red-700">
-          {error}
-        </p>
-      )}
-      {confirming && (
-        <div role="dialog" aria-modal="true" data-testid="confirm-submit" className="fixed inset-0 flex items-center justify-center bg-black/50 p-4">
-          <div className="flex max-w-sm flex-col gap-4 rounded bg-white p-6 text-black">
-            <p className="font-medium">Submit your {total} markers?</p>
-            <p className="text-sm">You get one submission for this game. After this you cannot play again.</p>
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setConfirming(false)} disabled={pending} className="rounded border px-3 py-2">
-                Keep looking
-              </button>
-              <button data-testid="confirm-submit-yes" onClick={submit} disabled={pending} className="rounded bg-black px-3 py-2 text-white">
-                {pending ? "Submitting…" : "Submit — I understand"}
-              </button>
-            </div>
-          </div>
+        <div className="px-4">
+          <Alert variant="destructive" role="alert">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         </div>
       )}
-    </main>
+      <footer className="sticky bottom-0 z-30 border-t bg-background/90 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-6xl items-center gap-3 px-4 py-3">
+          <TrashZone ref={trashRef} active={state.selected !== null} className="h-12 flex-1" />
+          <Button data-testid="submit" size="lg" disabled={!ready || pending} onClick={() => setConfirming(true)}>
+            Submit
+          </Button>
+        </div>
+      </footer>
+      <Dialog open={confirming} onOpenChange={(v) => !pending && setConfirming(v)}>
+        <DialogContent data-testid="confirm-submit">
+          <DialogHeader>
+            <DialogTitle>Submit your {total} markers?</DialogTitle>
+            <DialogDescription>You get one submission for this game. After this you cannot play again.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirming(false)} disabled={pending}>
+              Keep looking
+            </Button>
+            <Button data-testid="confirm-submit-yes" onClick={submit} disabled={pending}>
+              {pending ? "Submitting…" : "Submit — I understand"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

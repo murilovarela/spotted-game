@@ -3,14 +3,17 @@
  * set owned by an opponent so the master account has something to play.
  *
  * Drives the Phase 1 core with a shifted `now` so every row goes through the same
- * validation and locks as the app. Idempotent: deletes games titled "[seed] …" first.
+ * validation and locks as the app. Idempotent: deletes all games titled "[seed] …" or
+ * "[e2e] …" (for ANY master, not scoped by ID) first, so the shared dev database doesn't
+ * accumulate e2e artefacts from generate.spec.ts (which has no delete path in the UI for
+ * a published game) and CI seeding a fresh branch cleans up older runs.
  * Uses DATABASE_URL (not TEST_DATABASE_URL) on purpose — this seeds whatever branch
  * the app points at; CI points DATABASE_URL at the test branch for E2E.
  */
 import { loadEnvConfig } from "@next/env";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { eq, like } from "drizzle-orm";
+import { eq, like, or } from "drizzle-orm";
 import { createDb, type Database } from "@/db";
 import { games, users, type User } from "@/db/schema";
 import { addObject, confirmObject, createGame, publishGame, setGeneratedImage, setWindow, updateGame } from "@/lib/games/games";
@@ -25,6 +28,7 @@ const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 const FIXTURES = join(process.cwd(), "src/db/seed/fixtures");
 const PREFIX = "[seed] ";
+const E2E_PREFIX = "[e2e] ";
 
 type Ref = { id: string; publicId: string };
 type Window = { startsAt: Date; endsAt: Date } | null;
@@ -107,8 +111,12 @@ async function main(): Promise<void> {
   const opponent = await ensureUser(db, "seed-opponent", "Seed Opponent");
   const players = await Promise.all([1, 2, 3].map((n) => ensureUser(db, `seed-player-${n}`, `Player ${n}`)));
 
-  const deleted = await db.delete(games).where(like(games.title, `${PREFIX}%`)).returning({ id: games.id });
-  log(`removed ${deleted.length} previous seed game(s)`);
+  // Delete all "[seed] …" and "[e2e] …" games for any master, not scoped by ID; shared dev DB cleanup.
+  const deleted = await db
+    .delete(games)
+    .where(or(like(games.title, `${PREFIX}%`), like(games.title, `${E2E_PREFIX}%`)))
+    .returning({ id: games.id });
+  log(`removed ${deleted.length} previous seed/e2e game(s)`);
 
   const now = Date.now();
   const windows = {
