@@ -52,7 +52,10 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
   await setupClerkTestingToken({ page });
   await page.goto("/");
   await clerk.signIn({ page, emailAddress: user.email });
-  await page.goto("/games"); // a protected route: proves the session is live
+  // waitUntil: "domcontentloaded" — this only has to prove the session is live, not render the
+  // page; /games renders one full-size generated image per card, and waiting for "load" there
+  // can exceed the navigation timeout well before the DOM (and thus the session) is confirmed.
+  await page.goto("/games", { waitUntil: "domcontentloaded" });
   await page.waitForURL("**/games");
   await page.context().storageState({ path: "e2e/.auth/user.json" });
   await browser.close();

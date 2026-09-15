@@ -46,7 +46,7 @@ export default async function GamesPage() {
                   <div className="aspect-[4/3] w-full bg-muted">
                     {g.imageUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={g.imageUrl} alt="" className="h-full w-full object-cover" />
+                      <img src={g.imageUrl} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
                     ) : (
                       <div className="grid h-full place-items-center text-muted-foreground">
                         <ImageIcon className="size-8" aria-hidden />
