@@ -119,7 +119,7 @@ export function AuthorCanvas({ gameId, image, objects, editable }: { gameId: str
           {objects.map((o) => {
             const placed = o.x !== null;
             return (
-              <div key={o.id} className="inline-flex items-center gap-1">
+              <div key={o.id} className="inline-flex scroll-mt-20 scroll-mb-48 items-center gap-1">
                 <button
                   type="button"
                   data-testid="object-chip"
