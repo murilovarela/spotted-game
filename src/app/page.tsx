@@ -1,6 +1,6 @@
 import { ImageUp, Share2, Sparkles } from "lucide-react";
 import Link from "next/link";
-import { Show } from "@clerk/nextjs";
+import { getCurrentActor } from "@/lib/auth";
 import { Header } from "@/components/shell/header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,7 +11,9 @@ const STEPS = [
   { icon: Share2, title: "Share", body: "Publish a window, send the link, watch the leaderboard fill." },
 ] as const;
 
-export default function Home() {
+export default async function Home() {
+  const actor = await getCurrentActor();
+
   return (
     <div className="flex min-h-full flex-col">
       <Header />
@@ -21,12 +23,13 @@ export default function Home() {
             <h1 className="font-display text-5xl font-extrabold tracking-tight">Hide it. Share it. Race the clock.</h1>
             <p className="max-w-md text-lg text-muted-foreground">Spotted turns any photo into a hidden-object game. You pick what to hide; the model hides it; your friends hunt.</p>
             <div className="flex flex-wrap gap-3">
-              <Show when="signed-out">
-                <Button asChild size="lg"><Link href="/sign-in">Sign in to make a game</Link></Button>
-              </Show>
-              <Show when="signed-in">
+              {!actor && (
+                <Button asChild size="lg"><Link href="/sign-in">Sign in</Link></Button>
+              )}
+              {actor?.role === "game_master" && (
                 <Button asChild size="lg"><Link href="/games">My games</Link></Button>
-              </Show>
+              )}
+              {actor?.role === "player" && <p className="text-sm text-muted-foreground">Open a shared game link to play.</p>}
             </div>
           </div>
           {/* eslint-disable-next-line @next/next/no-img-element */}

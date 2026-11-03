@@ -6,7 +6,7 @@
 import { revalidatePath } from "next/cache";
 import { getDb } from "@/db";
 import type { User } from "@/db/schema";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentGameMaster, getCurrentUser } from "@/lib/auth";
 import { isNormalized, type AttemptResult, type LeaderboardEntry, type NormalizedPoint, type PlayerAttemptState } from "@/lib/types";
 import * as core from "./games";
 import * as play from "./play";
@@ -26,6 +26,15 @@ async function withUser<T>(fn: (user: User) => Promise<ActionResult<T>>): Promis
   const user = await getCurrentUser();
   if (!user) return fail("UNAUTHENTICATED", "Sign in first");
   return fn(user);
+}
+
+/** Every browser-callable authoring mutation crosses this server-side role gate. */
+async function withGameMaster<T>(fn: (user: User) => Promise<ActionResult<T>>): Promise<ActionResult<T>> {
+  const auth = await getCurrentGameMaster();
+  if (!auth.ok) {
+    return fail(auth.reason, auth.reason === "UNAUTHENTICATED" ? "Sign in first" : "Your account cannot author games");
+  }
+  return fn(auth.user);
 }
 
 function touched(gameId: string): void {
@@ -80,7 +89,7 @@ function validatePositionalInput(input: {
 // --- authoring (called by the master pages) ---
 
 export async function createGameAction(input: CreateGameInput): Promise<ActionResult<{ id: string; publicId: string }>> {
-  return withUser(async (u) => {
+  return withGameMaster(async (u) => {
     const r = await core.createGame(getDb(), u, input);
     if (r.ok) revalidatePath("/games");
     return r;
@@ -88,7 +97,7 @@ export async function createGameAction(input: CreateGameInput): Promise<ActionRe
 }
 
 export async function updateGameAction(gameId: string, input: UpdateGameInput): Promise<ActionResult<null>> {
-  return withUser(async (u) => {
+  return withGameMaster(async (u) => {
     const r = await core.updateGame(getDb(), u, gameId, input);
     touched(gameId);
     return r;
@@ -96,7 +105,7 @@ export async function updateGameAction(gameId: string, input: UpdateGameInput): 
 }
 
 export async function deleteGameAction(gameId: string): Promise<ActionResult<null>> {
-  return withUser(async (u) => {
+  return withGameMaster(async (u) => {
     const r = await core.deleteGame(getDb(), u, gameId);
     touched(gameId);
     return r;
@@ -104,9 +113,9 @@ export async function deleteGameAction(gameId: string): Promise<ActionResult<nul
 }
 
 export async function addObjectAction(gameId: string, input: AddObjectInput): Promise<ActionResult<{ id: string }>> {
-  const v = validatePositionalInput(input);
-  if (!v.ok) return v;
-  return withUser(async (u) => {
+  return withGameMaster(async (u) => {
+    const v = validatePositionalInput(input);
+    if (!v.ok) return v;
     const r = await core.addObject(getDb(), u, gameId, input);
     touched(gameId);
     return r;
@@ -114,9 +123,9 @@ export async function addObjectAction(gameId: string, input: AddObjectInput): Pr
 }
 
 export async function updateObjectAction(gameId: string, objectId: string, input: UpdateObjectInput): Promise<ActionResult<null>> {
-  const v = validatePositionalInput(input);
-  if (!v.ok) return v;
-  return withUser(async (u) => {
+  return withGameMaster(async (u) => {
+    const v = validatePositionalInput(input);
+    if (!v.ok) return v;
     const r = await core.updateObject(getDb(), u, objectId, input);
     touched(gameId);
     return r;
@@ -124,7 +133,7 @@ export async function updateObjectAction(gameId: string, objectId: string, input
 }
 
 export async function confirmObjectAction(gameId: string, objectId: string): Promise<ActionResult<null>> {
-  return withUser(async (u) => {
+  return withGameMaster(async (u) => {
     const r = await core.confirmObject(getDb(), u, objectId);
     touched(gameId);
     return r;
@@ -132,7 +141,7 @@ export async function confirmObjectAction(gameId: string, objectId: string): Pro
 }
 
 export async function removeObjectAction(gameId: string, objectId: string): Promise<ActionResult<null>> {
-  return withUser(async (u) => {
+  return withGameMaster(async (u) => {
     const r = await core.removeObject(getDb(), u, objectId);
     touched(gameId);
     return r;
@@ -140,7 +149,7 @@ export async function removeObjectAction(gameId: string, objectId: string): Prom
 }
 
 export async function setWindowAction(gameId: string, input: SetWindowInput): Promise<ActionResult<null>> {
-  return withUser(async (u) => {
+  return withGameMaster(async (u) => {
     const r = await core.setWindow(getDb(), u, gameId, input, new Date());
     touched(gameId);
     return r;
@@ -148,7 +157,7 @@ export async function setWindowAction(gameId: string, input: SetWindowInput): Pr
 }
 
 export async function publishGameAction(gameId: string): Promise<ActionResult<{ publishedAt: Date }>> {
-  return withUser(async (u) => {
+  return withGameMaster(async (u) => {
     const r = await core.publishGame(getDb(), u, gameId, new Date());
     touched(gameId);
     return r;
@@ -156,7 +165,7 @@ export async function publishGameAction(gameId: string): Promise<ActionResult<{ 
 }
 
 export async function unpublishGameAction(gameId: string): Promise<ActionResult<null>> {
-  return withUser(async (u) => {
+  return withGameMaster(async (u) => {
     const r = await core.unpublishGame(getDb(), u, gameId, new Date());
     touched(gameId);
     return r;

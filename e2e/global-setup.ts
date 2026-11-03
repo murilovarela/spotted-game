@@ -36,6 +36,14 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
   await clerkSetup();
   const user = await resolveUser();
 
+  // Authoring is server-authorized from Clerk metadata; make the E2E author explicit.
+  const secretKey = process.env.CLERK_SECRET_KEY;
+  if (!secretKey) throw new Error("CLERK_SECRET_KEY is not set");
+  const client = createClerkClient({ secretKey });
+  await client.users.updateUserMetadata(user.id, {
+    publicMetadata: { role: "game_master" },
+  });
+
   reseed(user.id, user.email);
 
   const baseURL = config.projects[0]?.use.baseURL ?? "http://localhost:3000";

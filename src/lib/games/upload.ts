@@ -1,5 +1,5 @@
 "use server";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentGameMaster } from "@/lib/auth";
 import { getDb } from "@/db";
 import { games } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -12,8 +12,11 @@ export async function requestUploadUrl(input: {
   kind: string;
   contentType: string;
 }): Promise<ActionResult<{ key: string; url: string }>> {
-  const user = await getCurrentUser();
-  if (!user) return fail("UNAUTHENTICATED", "Sign in first");
+  const auth = await getCurrentGameMaster();
+  if (!auth.ok) {
+    return fail(auth.reason, auth.reason === "UNAUTHENTICATED" ? "Sign in first" : "Your account cannot author games");
+  }
+  const user = auth.user;
   if (!isAllowedImageType(input.contentType)) return fail("INVALID_INPUT", "Use a PNG, JPEG, or WebP image");
   if (!isAssetKind(input.kind)) return fail("INVALID_INPUT", "Unknown asset kind");
   if (!isUuid(input.gameId)) return fail("NOT_FOUND", "Game not found");

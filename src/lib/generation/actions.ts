@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { getDb } from "@/db";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentGameMaster } from "@/lib/auth";
 import { fail, ok, type ActionResult } from "@/lib/games/result";
 import { isUuid } from "@/lib/games/validation";
 import { getObject, putObject } from "@/lib/storage";
@@ -11,9 +11,12 @@ import { backendFromEnv } from "./backend";
 import { dailyCapFromEnv, runGeneration, startGeneration } from "./run";
 
 export async function startGenerationAction(gameId: string): Promise<ActionResult<{ attemptNumber: number }>> {
+  const auth = await getCurrentGameMaster();
+  if (!auth.ok) {
+    return fail(auth.reason, auth.reason === "UNAUTHENTICATED" ? "Sign in first" : "Your account cannot author games");
+  }
   if (!isUuid(gameId)) return fail("NOT_FOUND", "Game not found");
-  const user = await getCurrentUser();
-  if (!user) return fail("UNAUTHENTICATED", "Sign in first");
+  const user = auth.user;
   const started = await startGeneration(getDb(), user, gameId, new Date(), { dailyCap: dailyCapFromEnv() });
   if (!started.ok) return started;
   after(async () => {

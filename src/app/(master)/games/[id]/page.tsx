@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { getDb } from "@/db";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentGameMaster } from "@/lib/auth";
 import { addObjectAction, publishGameAction, setWindowAction, unpublishGameAction, updateGameAction } from "@/lib/games/actions";
 import { loadGameForMasterById } from "@/lib/games/queries";
 import { deriveGenerationState } from "@/lib/generation/status";
@@ -32,8 +32,10 @@ export default async function EditGamePage({
 }) {
   const [{ id }, { error: errorCode }] = await Promise.all([params, searchParams]);
   const error = masterErrorCopy(errorCode);
-  const user = await getCurrentUser();
-  if (!user) redirect("/sign-in");
+  // Protect unpublished authoring data on the server, not only the editing actions.
+  const auth = await getCurrentGameMaster();
+  if (!auth.ok) redirect(auth.reason === "UNAUTHENTICATED" ? "/sign-in" : "/");
+  const user = auth.user;
   const game = await loadGameForMasterById(getDb(), id, user.id, new Date());
   if (!game) notFound();
   const editable = game.status === "draft";

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createGameAction } from "@/lib/games/actions";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentGameMaster } from "@/lib/auth";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,8 +14,9 @@ export const metadata = { title: "New game" };
 export default async function NewGamePage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error: errorCode } = await searchParams;
   const error = masterErrorCopy(errorCode);
-  const user = await getCurrentUser();
-  if (!user) redirect("/sign-in");
+  // This keeps players out of the form; createGameAction repeats the check server-side.
+  const auth = await getCurrentGameMaster();
+  if (!auth.ok) redirect(auth.reason === "UNAUTHENTICATED" ? "/sign-in" : "/");
 
   async function create(formData: FormData) {
     "use server";
