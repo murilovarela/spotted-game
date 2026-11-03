@@ -4,6 +4,7 @@
  */
 export type ActionError =
   | "UNAUTHENTICATED"
+  | "FORBIDDEN"
   | "NOT_FOUND"
   | "NOT_MASTER"
   | "INVALID_INPUT"

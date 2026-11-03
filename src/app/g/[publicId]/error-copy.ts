@@ -12,6 +12,7 @@ const GENERIC = "Something went wrong. Try again.";
 // A complete record, so adding a code to `ActionError` is a type error until it is listed here.
 const CODES: Readonly<Record<ActionError, true>> = {
   UNAUTHENTICATED: true,
+  FORBIDDEN: true,
   NOT_FOUND: true,
   NOT_MASTER: true,
   INVALID_INPUT: true,

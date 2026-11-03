@@ -14,11 +14,14 @@ no ranking.
 
 | Role | Capability |
 | --- | --- |
-| **Game Master** | Creates games, uploads assets, verifies object positions, schedules the window |
+| **Game Master** | May access authoring; creates games, uploads assets, verifies object positions, schedules the window |
 | **Player** | Opens a game link, places markers, submits, appears on the leaderboard |
 
-Authorization is per-game: the creating user is that game's master. There is no global
-admin role and no organization model. Any authenticated user may create a game.
+Authoring requires the exact Clerk public metadata value `role: "game_master"` and is
+enforced at every server-side authoring boundary. Missing or unknown roles fail closed to
+player access. Authorization within authoring is also per-game: the creating user is that
+game's master and only that user may change it. There is no global admin role and no
+organization model.
 
 ## 3. Core requirements
 
@@ -236,6 +239,7 @@ Phase 0 as a fallback. If Nano Banana proves unreliable, the product still plays
 ## 8. Acceptance criteria
 
 **Authoring**
+- A player cannot read authoring pages or invoke create, edit, upload, generation, or publish operations.
 - A master can go from upload to published game without touching a coordinate value.
 - A game with an unconfirmed object cannot be published.
 - A generation failure surfaces a specific, actionable reason.

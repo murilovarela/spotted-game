@@ -40,7 +40,9 @@ Fill in `.env.local`:
   CORS is already permissive (`AllowedOrigins: ["*"]`); nothing to configure there.
 - **Clerk** — create a dev instance, restrict sign-in to Google only, and set
   `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` / `CLERK_SECRET_KEY` (`NEXT_PUBLIC_CLERK_SIGN_IN_URL`
-  and `NEXT_PUBLIC_CLERK_SIGN_UP_URL` already default to `/sign-in` / `/sign-up`).
+  and `NEXT_PUBLIC_CLERK_SIGN_UP_URL` already default to `/sign-in` / `/sign-up`). In the
+  Clerk dashboard, give each authoring user public metadata
+  `{ "role": "game_master" }`; all other users are players by default.
 - **Gemini** — `GEMINI_API_KEY` from Google AI Studio, plus `GEMINI_IMAGE_MODEL` /
   `GEMINI_VISION_MODEL`. `GENERATION_MODE=paste` composites deterministically with no API
   call (what CI uses); `gemini` calls the real backend.

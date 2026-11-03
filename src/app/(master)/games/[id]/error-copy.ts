@@ -12,6 +12,7 @@ const MASTER_COPY: ErrorCopy = {
   NOT_FOUND: "That game or object no longer exists.",
   NOT_MASTER: "Only the game master can do that.",
   UNAUTHENTICATED: "Sign in first.",
+  FORBIDDEN: "Your account does not have permission to author games.",
 };
 
 export const masterErrorCopy = (code: string | undefined): string | null => errorCopy(code, MASTER_COPY);

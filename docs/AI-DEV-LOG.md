@@ -1114,3 +1114,93 @@ Mirrors the table in SYSTEM.md §7. Each row started as a correction given twice
 | 2026-09-13 | File-write hooks are bypassed by shell writes | *Open.* Guard should also match `Bash` and inspect the command for protected paths |
 | 2026-09-14 | Runbook claims must be checked against the environment before being written | *Open.* The integration-reviewer brief now asks for a docs-vs-deployment pass; no automated check |
 | 2026-09-14 | Subagents must not background their own test runs | Dispatch text: "run e2e in the foreground with a 600 s timeout" — not yet in the implementer template |
+
+---
+
+## Role-gated authoring — 3 November 2026
+
+### What we set out to do
+
+Authoring had been open to every signed-in account. The goal was to keep game links and
+play available to normal users while allowing only explicitly approved accounts to read
+authoring pages or create and change games.
+
+### What we decided and why
+
+We considered a database role, an email allowlist, and Clerk metadata. We chose the exact
+Clerk public metadata value `role: "game_master"` because Clerk already owns identity and
+its public metadata is writable only through the backend. Missing, malformed, and unknown
+values become `player`; there is no permissive fallback. Per-game ownership remains a
+second check after the global authoring role.
+
+The browser is not trusted with this decision. `src/lib/auth.ts` resolves the role through
+Clerk on the server, and the server actions for game changes, presigned uploads, and
+generation all reject players with `FORBIDDEN`. Authoring pages repeat the server check so
+revoked users cannot read draft data. Navigation changes only prevent dead-end links; they
+are not the security boundary.
+
+### What broke
+
+The implementation initially could not run `npm run verify` in this agent shell because neither
+`node` nor `npm` was installed or available on `PATH`; the command failed with
+`command not found: npm`. Loading the login shell also failed because `.zshrc` referenced
+a missing `/opt/homebrew/opt/asdf/libexec/asdf.sh`.
+
+### What changed because of it
+
+Node 22.23.2 was installed under `~/.local`, the lockfile installed 682 packages, and the
+full `npm run verify` then passed: typecheck, lint, 27 test files, and 236 tests. The
+install audit reported 38 dependency vulnerabilities (29 moderate, 7 high, 2 critical);
+they were not auto-fixed because that can change the locked dependency graph and requires
+separate review. Playwright setup now grants its author account the same Clerk metadata
+as production instead of bypassing the policy.
+
+### Where this leaves us
+
+Players can still sign in and play shared games, but every authoring request is now
+server-gated and existing owners without the Clerk role lose authoring access immediately.
+No database migration was needed; operators assign authors in Clerk.
+
+---
+
+## Dependency security remediation — 3 November 2026
+
+### What we set out to do
+
+The first clean install reported 38 dependency vulnerabilities: 29 moderate, 7 high, and
+2 critical. Twelve were in the production tree, including unauthenticated Next.js image
+optimization and cache vulnerabilities; the rest were in build and test tooling.
+
+### What we decided and why
+
+We rejected `npm audit fix --force` because npm proposed incompatible downgrades such as
+Next 12, ESLint 4, and Drizzle Kit 0.18. Instead, direct packages moved to patched releases
+within their current major versions: Next.js and its ESLint config to 16.4.4, Sharp to
+0.35.5, Google GenAI to 2.32.0, Vite to 7.3.7, Vitest and coverage to 5.1.0, and Drizzle
+Kit to 0.31.11. Vulnerable transitive packages were refreshed within their declared
+ranges.
+
+Two upstream ranges still pinned vulnerable tools after those upgrades. Scoped npm
+overrides now require patched `esbuild >=0.25.12` and `minimatch >=11.0.1`; both are
+development-only dependency paths. The lockfile remains the reproducible source used by
+CI.
+
+### What broke
+
+`npm audit fix --dry-run --json` crashed inside npm with `Cannot read properties of null
+(reading 'edgesOut')`, so it could not provide a trustworthy preview. The first nested
+`esbuild` override also left an invalid 0.18.20 installation because its range excluded
+the already-safe 0.28 copies used by Vite and tsx. Changing the override to a minimum
+version allowed npm to deduplicate safely while retaining newer versions.
+
+### What changed because of it
+
+A fresh `npm ci` now installs 673 packages and `npm audit --audit-level=low` reports zero
+vulnerabilities. `npm run verify` passed typecheck, lint, 27 test files, and 236 tests;
+the Next.js 16.4.4 production build passed; and Drizzle Kit 0.31.11 started successfully
+with the overridden `esbuild`.
+
+### Where this leaves us
+
+Both production and development dependency trees audit clean without forced downgrades.
+The remaining install messages are deprecation notices, not known vulnerabilities.

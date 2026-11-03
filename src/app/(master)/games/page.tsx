@@ -2,7 +2,7 @@ import { ImageIcon, Plus } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getDb } from "@/db";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentGameMaster } from "@/lib/auth";
 import { listGamesForMaster } from "@/lib/games/queries";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,8 +12,10 @@ import { StatusBadge } from "./status-badge";
 export const metadata = { title: "My games" };
 
 export default async function GamesPage() {
-  const user = await getCurrentUser();
-  if (!user) redirect("/sign-in");
+  // Server-side page gate; the mutation actions independently enforce the same role.
+  const auth = await getCurrentGameMaster();
+  if (!auth.ok) redirect(auth.reason === "UNAUTHENTICATED" ? "/sign-in" : "/");
+  const user = auth.user;
   const list = await listGamesForMaster(getDb(), user.id, new Date());
   return (
     <>

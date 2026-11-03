@@ -35,6 +35,10 @@ scope, before the first deploy that needs them.
 `.env.example` documents the same variables for local development; this table maps each to
 its production source.
 
+In Clerk, assign public metadata `{ "role": "game_master" }` to every account that may
+author games, including the owner. Missing or different values are treated as player
+access. The Playwright setup assigns this metadata to its own test user automatically.
+
 ## 2. Bucket CORS
 
 Nothing to do: the `assets` bucket is configured with `AllowedOrigins: ["*"]` (verified with
